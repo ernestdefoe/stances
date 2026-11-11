@@ -328,10 +328,43 @@ export default class StanceCard extends Component<CardAttrs> {
         icon="fas fa-ellipsis-h"
         label={t('menu.label')}
         accessibleToggleLabel={t('menu.label')}
+        onshow={() => this.placeMenu()}
+        onhide={() => this.unplaceMenu?.()}
       >
         {items}
       </Dropdown>
     );
+  }
+
+  unplaceMenu: (() => void) | null = null;
+
+  /**
+   * Core gives .Post-body `overflow: auto`, so a menu positioned inside the post is clipped. Pin it
+   * to the viewport under the button (above it when there's no room below), and close it on scroll,
+   * where a pinned menu would float away from its button.
+   */
+  placeMenu() {
+    const root = this.element as HTMLElement | undefined;
+    const toggle = root?.querySelector<HTMLElement>('.StanceCard-menu .Dropdown-toggle');
+    const menu = root?.querySelector<HTMLElement>('.StanceCard-menu .Dropdown-menu');
+    // Phones: core already shows menus as a fixed sheet at the bottom of the screen.
+    if (!toggle || !menu || getComputedStyle(menu).position === 'fixed') return;
+    const r = toggle.getBoundingClientRect();
+    Object.assign(menu.style, { position: 'fixed', right: 'auto', bottom: 'auto', margin: '0', top: '0px', left: '0px' });
+    const h = menu.offsetHeight;
+    const w = menu.offsetWidth;
+    const below = r.bottom + 4 + h <= window.innerHeight;
+    menu.style.top = Math.max(4, below ? r.bottom + 4 : r.top - h - 4) + 'px';
+    menu.style.left = Math.max(4, Math.min(r.right - w, window.innerWidth - w - 4)) + 'px';
+    const close = () => {
+      if (toggle.closest('.Dropdown')?.classList.contains('open')) toggle.click();
+    };
+    window.addEventListener('scroll', close, { once: true, passive: true });
+    this.unplaceMenu = () => {
+      window.removeEventListener('scroll', close);
+      menu.removeAttribute('style');
+      this.unplaceMenu = null;
+    };
   }
 
   clickable(choice: number): boolean {
