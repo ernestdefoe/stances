@@ -2,9 +2,9 @@
 
 namespace ErnestDefoe\Stances\Api;
 
-use Carbon\Carbon;
 use ErnestDefoe\Stances\Access;
 use ErnestDefoe\Stances\Block;
+use ErnestDefoe\Stances\NeedsVote;
 use ErnestDefoe\Stances\Presenter;
 use ErnestDefoe\Stances\Settings;
 use ErnestDefoe\Stances\Sides;
@@ -25,12 +25,13 @@ use WeakMap;
 class DiscussionFields
 {
     /** @var WeakMap<ServerRequestInterface, array{ids: array<int, true>, open: array<int, true>|null}>|null */
-    private static ?WeakMap $needs = null;
+    private static ?WeakMap $memo = null;
 
     public function __construct(
         private readonly Presenter $presenter,
         private readonly Sides $sides,
         private readonly Settings $settings,
+        private readonly NeedsVote $needs,
     ) {
     }
 
@@ -49,7 +50,7 @@ class DiscussionFields
                         return null;
                     }
                     $actor = $context->getActor();
-                    $block = Block::query()->visibleTo($actor)->find($featuredId);
+                    $block = Block::query()->whereVisibleTo($actor)->find($featuredId);
                     if (! $block) {
                         return null;
                     }
@@ -81,29 +82,24 @@ class DiscussionFields
 
     private function needsVote(Discussion $discussion, Context $context): \Closure
     {
-        self::$needs ??= new WeakMap();
+        self::$memo ??= new WeakMap();
         $request = $context->request;
-        $state = self::$needs[$request] ?? ['ids' => [], 'open' => null];
+        $state = self::$memo[$request] ?? ['ids' => [], 'open' => null];
         $state['ids'][(int) $discussion->id] = true;
-        self::$needs[$request] = $state;
+        self::$memo[$request] = $state;
 
         return function () use ($discussion, $request, $context) {
-            $state = self::$needs[$request];
+            $state = self::$memo[$request];
             if ($state['open'] === null) {
                 $actor = $context->getActor();
-                $now = Carbon::now();
-                $state['open'] = Block::query()->visibleTo($actor)
+                // The sidebar count's query, narrowed to this page's discussions.
+                $state['open'] = ($this->needs->query($actor) ?? Block::query()->whereRaw('1 = 0'))
                     ->whereIn('stance_blocks.discussion_id', array_keys($state['ids']))
-                    ->whereNull('stance_blocks.closed_at')
-                    ->where(fn ($q) => $q->whereNull('stance_blocks.closes_at')->orWhere('stance_blocks.closes_at', '>', $now))
-                    ->whereNotExists(fn (QueryBuilder $q) => $q->selectRaw('1')->from('stance_votes')
-                        ->whereColumn('stance_votes.block_id', 'stance_blocks.id')
-                        ->where('stance_votes.user_id', $actor->id))
                     ->distinct()
                     ->pluck('stance_blocks.discussion_id')
                     ->mapWithKeys(fn ($id) => [(int) $id => true])
                     ->all();
-                self::$needs[$request] = $state;
+                self::$memo[$request] = $state;
             }
 
             return isset($state['open'][(int) $discussion->id]);

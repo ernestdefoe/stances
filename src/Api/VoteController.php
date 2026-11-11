@@ -33,6 +33,13 @@ class VoteController extends Handler
         $block = Find::visible($request, $actor);
 
         if (! $this->presenter->one($block, $actor)['canVote']) {
+            // Say why when it's the post or the discussion, not the member.
+            if ($block->post?->hidden_at !== null) {
+                throw new Refusal('stances_post_hidden');
+            }
+            if ($block->discussion?->getAttribute('is_locked')) {
+                throw new Refusal('stances_discussion_locked');
+            }
             self::deny();
         }
 
@@ -41,15 +48,18 @@ class VoteController extends Handler
             self::deny();
         }
 
-        // Every vote and change is a history row: 60 a minute is far past anyone clicking.
+        // Every vote and change is a history row: 60 a minute is far past anyone clicking. A fixed
+        // window (add() never refreshes the expiry), counting only votes that changed something.
         $key = 'stances-votes-'.$actor->id;
-        $count = (int) $this->cache->get($key, 0);
-        if ($count >= self::PER_MINUTE) {
+        $this->cache->add($key, 0, 60);
+        if ((int) $this->cache->get($key, 0) >= self::PER_MINUTE) {
             throw new Refusal('stances_too_many_votes', 429);
         }
-        $this->cache->put($key, $count + 1, 60);
 
-        $block = $this->votes->vote($block, $actor, $choice);
+        [$block, $changed] = $this->votes->vote($block, $actor, $choice);
+        if ($changed) {
+            $this->cache->increment($key);
+        }
 
         return new JsonResponse(['data' => $this->presenter->one($block, $actor)]);
     }

@@ -29,7 +29,7 @@ class Presenter
             return [];
         }
 
-        $blocks->loadMissing('discussion');
+        $blocks->loadMissing(['discussion', 'post']);
         /** @var Collection<int, \Flarum\Discussion\Discussion> $discussions */
         $discussions = new Collection($blocks->pluck('discussion')->filter()->unique('id')->values()->all());
         Access::tags($discussions);
@@ -113,7 +113,8 @@ class Presenter
             'counts' => $visible ? array_values($counts) : null,
             'average' => $visible ? $average : null,
             'mine' => $mine,
-            'canVote' => $can['vote'] && ! $closed && $block->hidden_at === null && $block->post_id !== null,
+            'canVote' => $can['vote'] && ! $closed && $block->hidden_at === null && $block->post_id !== null
+                && $block->post?->hidden_at === null && ! $block->discussion?->getAttribute('is_locked'),
             'canEdit' => $can['moderate'] || ($owner && $can['create'] && $block->vote_count === 0),
             'canModerate' => $can['moderate'],
             'canClose' => $can['moderate'] || ($owner && $can['create']),

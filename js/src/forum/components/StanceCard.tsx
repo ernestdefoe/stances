@@ -10,7 +10,7 @@ import { call, choiceLabel, ICONS } from './api';
 import { explain } from './explain';
 import StanceModal from './StanceModal';
 import VotersModal from './VotersModal';
-import { sideFilter, setSideFilter } from '../sides';
+import { applySideFilter, sideFilter } from '../sides';
 import { refreshOwnSides } from './ownSides';
 
 declare const m: Mithril.Static;
@@ -234,7 +234,7 @@ export default class StanceCard extends Component<CardAttrs> {
         type="button"
         className={`StanceFilter-chip${current === value ? ' is-active' : ''}`}
         aria-pressed={current === value ? 'true' : 'false'}
-        onclick={() => setSideFilter(value)}
+        onclick={() => this.chooseSide(value)}
       >
         {label}
       </button>
@@ -333,6 +333,17 @@ export default class StanceCard extends Component<CardAttrs> {
       >
         {items}
       </Dropdown>
+    );
+  }
+
+  /** Point the post stream at one side's replies (fetched), or back at the whole discussion. */
+  chooseSide(value: number | null) {
+    const s = this.stance();
+    const discussion: any = app.store.getById('discussions', String(s.discussionId));
+    if (!discussion || value === sideFilter()) return;
+    if (value === null) return applySideFilter(discussion, null, null);
+    this.run(() =>
+      call<{ data: string[] }>('GET', `/stances/${s.id}/sides`, { choice: value }).then((r) => applySideFilter(discussion, value, r.data))
     );
   }
 

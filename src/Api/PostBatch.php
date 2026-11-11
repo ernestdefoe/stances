@@ -89,6 +89,7 @@ class PostBatch
         $blocks = Block::query()->whereIn('post_id', array_keys($holding))->whereNull('hidden_at')->orderBy('id')->get();
         foreach ($blocks as $block) {
             $post = $holding[$block->post_id];
+            $block->setRelation('post', $post);
             if ($post->relationLoaded('discussion') && $post->discussion) {
                 $block->setRelation('discussion', $post->discussion);
             }

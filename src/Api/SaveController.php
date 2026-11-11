@@ -11,6 +11,8 @@ use ErnestDefoe\Stances\Refusal;
 use ErnestDefoe\Stances\Settings;
 use Flarum\Discussion\Discussion;
 use Flarum\Http\RequestUtil;
+use Flarum\User\User;
+use Illuminate\Contracts\Cache\Repository;
 use Laminas\Diactoros\Response\JsonResponse;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
@@ -29,6 +31,7 @@ class SaveController extends Handler
         private readonly Settings $settings,
         private readonly Presenter $presenter,
         private readonly Images $images,
+        private readonly Repository $cache,
     ) {
     }
 
@@ -54,7 +57,7 @@ class SaveController extends Handler
 
             $block = new Block();
             $block->user_id = $actor->id;
-            $this->fill($block, $body, true);
+            $this->fill($block, $body, true, $actor);
             $block->counts = array_fill(0, $block->maxChoice() - $block->minChoice() + 1, 0);
             $block->save();
 
@@ -98,7 +101,7 @@ class SaveController extends Handler
             if (! $draft && ! $data['canEdit']) {
                 self::deny();
             }
-            $this->fill($block, $body, false);
+            $this->fill($block, $body, false, $actor);
         }
 
         $block->save();
@@ -107,7 +110,7 @@ class SaveController extends Handler
     }
 
     /** @param array<string, mixed> $body */
-    private function fill(Block $block, array $body, bool $new): void
+    private function fill(Block $block, array $body, bool $new, User $actor): void
     {
         $type = $new || $block->vote_count === 0
             ? Input::type($body['type'] ?? $block->type, $this->settings->types())
@@ -125,7 +128,12 @@ class SaveController extends Handler
         }
         $block->badges = $block->isSided() && ! $block->anonymous
             && Input::bool($body['badges'] ?? null, $new ? $this->settings->flag(Settings::BADGES) : $block->badges);
-        $block->closes_at = Input::closesAt($body['closesAt'] ?? null);
+        $closesAt = Input::closesAt($body['closesAt'] ?? null);
+        if ($closesAt && ($block->closes_at === null || ! $closesAt->equalTo($block->closes_at))) {
+            // A new close date: voters hear about this close too.
+            $block->closed_notified_at = null;
+        }
+        $block->closes_at = $closesAt;
 
         $old = $block->images ?? [];
         $images = null;
@@ -135,7 +143,7 @@ class SaveController extends Handler
             foreach ([0, 1] as $i) {
                 $path = $given[$i] ?? null;
                 // Only a picture this block already had, or a fresh upload to our folder.
-                $images[$i] = $this->images->owns($path) && (in_array($path, $old, true) || $this->unclaimed($path)) ? $path : null;
+                $images[$i] = $this->images->owns($path) && (in_array($path, $old, true) || $this->mayClaim($path, $actor)) ? $path : null;
             }
         }
         $block->images = $images;
@@ -148,9 +156,13 @@ class SaveController extends Handler
         }
     }
 
-    /** A freshly uploaded picture no block uses yet, so nobody can take over another block's picture. */
-    private function unclaimed(string $path): bool
+    /** A picture this member uploaded, that no block uses yet: nobody can take over someone else's. */
+    private function mayClaim(string $path, User $actor): bool
     {
+        if ((int) $this->cache->get(Images::ownerKey($path)) !== (int) $actor->id) {
+            return false;
+        }
+
         // The random part of the name is [a-z0-9] only, so it's safe in LIKE however the JSON escapes the slash.
         return ! Block::query()->where('images', 'like', '%'.basename($path, '.webp').'%')->exists();
     }

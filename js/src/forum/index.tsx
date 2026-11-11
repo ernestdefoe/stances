@@ -10,7 +10,7 @@ import CommentPost from 'flarum/forum/components/CommentPost';
 import type Mithril from 'mithril';
 import { remember, t, type Side, type Stance } from './util';
 import { markerIds } from './composer';
-import { setSideFilter, sideFilter } from './sides';
+import { clearSideFilter } from './sides';
 import { featuredCopy } from './featured';
 
 export { default as extend } from './extend';
@@ -159,12 +159,6 @@ app.initializers.add('ernestdefoe/stances', () => {
     );
   });
 
-  // Which side the post's author is on, for the "Show replies from" filter.
-  extend(CommentPost.prototype, 'classes', function (this: CommentPost, classes: string[]) {
-    const side: Side | null = (this.attrs.post as any).attribute('stanceSide');
-    if (side) classes.push(`Post--side${side.choice}`);
-  });
-
   // The featured block, in core's slot under the opening post. Not above it: core's scroll
   // anchoring needs the first post to be the stream's first child. A block that already sits in
   // the opening post isn't repeated.
@@ -184,7 +178,7 @@ app.initializers.add('ernestdefoe/stances', () => {
 
   // The filter belongs to one discussion: leaving it clears the filter.
   extend('flarum/forum/components/DiscussionPage', 'onremove', function () {
-    if (sideFilter() !== null) setSideFilter(null);
+    clearSideFilter();
   });
 
   // In the composer header, after the title (phones lift the first item into the top bar).

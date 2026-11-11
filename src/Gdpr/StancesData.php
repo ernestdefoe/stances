@@ -32,7 +32,7 @@ class StancesData extends Type
     public function export(): ?array
     {
         $votes = Vote::query()->where('user_id', $this->user->id)->orderBy('created_at')->get();
-        $visible = Block::query()->visibleTo($this->user)
+        $visible = Block::query()->whereVisibleTo($this->user)
             ->whereIn('stance_blocks.id', $votes->pluck('block_id')->all() ?: [0])->get()->keyBy('id');
 
         $rows = [

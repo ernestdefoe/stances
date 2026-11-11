@@ -25,9 +25,10 @@ class ClosedBlueprint implements BlueprintInterface, AlertableInterface
         return $this->block;
     }
 
+    /** The close time, so a block reopened and closed again is a new alert, not the old one restored. */
     public function getData(): mixed
     {
-        return null;
+        return ['closed' => ($this->block->closed_at ?? $this->block->closes_at)?->toIso8601String()];
     }
 
     public static function getType(): string

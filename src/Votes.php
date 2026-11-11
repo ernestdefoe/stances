@@ -5,7 +5,9 @@ namespace ErnestDefoe\Stances;
 use Carbon\Carbon;
 use ErnestDefoe\Stances\Event\Voted;
 use ErnestDefoe\Stances\Notification\MilestoneBlueprint;
+use Flarum\Discussion\Discussion;
 use Flarum\Notification\NotificationSyncer;
+use Flarum\Post\Post;
 use Flarum\User\User;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Database\ConnectionInterface;
@@ -27,10 +29,15 @@ class Votes
     ) {
     }
 
-    /** $choice null takes the vote back. */
-    public function vote(Block $block, User $actor, ?int $choice): Block
+    /**
+     * $choice null takes the vote back. Returns the block and whether anything changed: a vote for
+     * what the member already chose writes nothing and fires nothing.
+     *
+     * @return array{0: Block, 1: bool}
+     */
+    public function vote(Block $block, User $actor, ?int $choice): array
     {
-        [$locked, $before] = $this->db->transaction(function () use ($block, $actor, $choice) {
+        [$locked, $before, $changed] = $this->db->transaction(function () use ($block, $actor, $choice) {
             $locked = $this->lock($block);
             $before = $locked->vote_count;
 
@@ -40,13 +47,22 @@ class Votes
             if ($locked->isClosed()) {
                 throw new Refusal('stances_closed');
             }
+            // A hidden post takes no votes from anyone; a locked discussion (flarum/lock) means the
+            // debate is over, moderators included.
+            $post = Post::query()->whereKey($locked->post_id)->first(['id', 'discussion_id', 'hidden_at']);
+            if (! $post || $post->hidden_at !== null) {
+                throw new Refusal('stances_post_hidden');
+            }
+            if (Discussion::query()->whereKey($post->discussion_id)->first()?->getAttribute('is_locked')) {
+                throw new Refusal('stances_discussion_locked');
+            }
             if ($choice !== null && ($choice < $locked->minChoice() || $choice > $locked->maxChoice())) {
                 throw new Refusal('stances_bad_choice');
             }
 
             $vote = Vote::query()->where('block_id', $locked->id)->where('user_id', $actor->id)->first();
             if ($vote && $vote->choice === $choice) {
-                return [$locked, $before];
+                return [$locked, $before, false];
             }
             if ($vote && ! $locked->allow_change) {
                 throw new Refusal('stances_locked_vote');
@@ -54,7 +70,7 @@ class Votes
 
             if ($choice === null) {
                 if (! $vote) {
-                    return [$locked, $before];
+                    return [$locked, $before, false];
                 }
                 if (! $locked->allow_remove) {
                     throw new Refusal('stances_locked_vote');
@@ -77,13 +93,15 @@ class Votes
 
             $this->recount($locked);
 
-            return [$locked, $before];
+            return [$locked, $before, true];
         });
 
-        $this->milestones($locked, $before);
-        $this->events->dispatch(new Voted($locked, $actor));
+        if ($changed) {
+            $this->milestones($locked, $before);
+            $this->events->dispatch(new Voted($locked, $actor));
+        }
 
-        return $locked;
+        return [$locked, $changed];
     }
 
     /** Wipes every vote and the history behind the badges' "changed" tags. */

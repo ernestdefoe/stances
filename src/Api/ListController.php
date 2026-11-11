@@ -4,6 +4,7 @@ namespace ErnestDefoe\Stances\Api;
 
 use Carbon\Carbon;
 use ErnestDefoe\Stances\Block;
+use ErnestDefoe\Stances\NeedsVote;
 use ErnestDefoe\Stances\Presenter;
 use Flarum\Http\RequestUtil;
 use Flarum\Post\Post;
@@ -28,8 +29,10 @@ class ListController extends Handler
     public const TRENDING_HOURS = 48;
     public const RECENT_HOURS = 6;
 
-    public function __construct(private readonly Presenter $presenter)
-    {
+    public function __construct(
+        private readonly Presenter $presenter,
+        private readonly NeedsVote $needs,
+    ) {
     }
 
     protected function respond(ServerRequestInterface $request): ResponseInterface
@@ -55,7 +58,7 @@ class ListController extends Handler
         $tab = in_array($filter['tab'] ?? '', ['trending', 'new', 'closing', 'needs'], true) ? $filter['tab'] : 'trending';
         $offset = max(0, (int) Arr::get($request->getQueryParams(), 'page.offset', 0));
 
-        $query = Block::query()->visibleTo($actor)->select('stance_blocks.*');
+        $query = Block::query()->whereVisibleTo($actor)->select('stance_blocks.*');
         if (in_array($filter['type'] ?? '', Block::TYPES, true)) {
             $query->where('stance_blocks.type', $filter['type']);
         }
@@ -74,14 +77,15 @@ class ListController extends Handler
                 $query->whereNull('stance_blocks.closed_at')->where('stance_blocks.closes_at', '>', $now)->orderBy('stance_blocks.closes_at');
                 break;
             case 'needs':
-                if ($actor->isGuest()) {
+                // The sidebar count's own query: votable, in SQL, so pages are never short.
+                $needs = $this->needs->query($actor);
+                if (! $needs) {
                     return new JsonResponse(['data' => [], 'links' => []]);
                 }
-                $open($query);
-                $query->whereNotExists(fn (QueryBuilder $q) => $q->selectRaw('1')->from('stance_votes')
-                    ->whereColumn('stance_votes.block_id', 'stance_blocks.id')
-                    ->where('stance_votes.user_id', $actor->id))
-                    ->orderByDesc('stance_blocks.id');
+                $query = $needs->select('stance_blocks.*')->orderByDesc('stance_blocks.id');
+                if (in_array($filter['type'] ?? '', Block::TYPES, true)) {
+                    $query->where('stance_blocks.type', $filter['type']);
+                }
                 break;
             default:
                 // Recent bursts beat big old totals: votes in the last 48 hours, the last 6 counted three times.
@@ -112,9 +116,6 @@ class ListController extends Handler
         $data = [];
         foreach ($this->presenter->many($blocks, $actor) as $i => $row) {
             $block = $blocks[$i];
-            if ($tab === 'needs' && ! $row['canVote']) {
-                continue;
-            }
             $data[] = $row + [
                 'discussion' => $block->discussion ? ['id' => $block->discussion->id, 'title' => $block->discussion->title, 'slug' => $block->discussion->slug] : null,
                 'postNumber' => $block->post?->number,

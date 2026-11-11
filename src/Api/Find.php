@@ -21,7 +21,7 @@ final class Find
     public static function visible(ServerRequestInterface $request, User $actor): Block
     {
         $id = (int) Arr::get($request->getQueryParams(), 'id');
-        $block = Block::query()->visibleTo($actor)->find($id);
+        $block = Block::query()->whereVisibleTo($actor)->find($id);
 
         if (! $block && ! $actor->isGuest()) {
             $block = Block::query()->find($id);

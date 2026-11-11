@@ -8,6 +8,7 @@ use ErnestDefoe\Stances\Vote;
 use ErnestDefoe\Stances\Votes;
 use Flarum\Discussion\Event\Deleting as DiscussionDeleting;
 use Flarum\Post\Event\Deleting as PostDeleting;
+use Flarum\Post\Post;
 use Flarum\User\Event\Deleting as UserDeleting;
 
 /**
@@ -28,9 +29,10 @@ class Cleanup
         $this->delete(Block::query()->where('post_id', $event->post->id)->get());
     }
 
+    /** The blocks of the posts still in the discussion: fof/merge-discussions moves posts out before deleting it. */
     public function discussion(DiscussionDeleting $event): void
     {
-        $this->delete(Block::query()->where('discussion_id', $event->discussion->id)->get());
+        $this->delete(Block::query()->whereIn('post_id', Post::query()->where('discussion_id', $event->discussion->id)->select('id'))->get());
     }
 
     public function user(UserDeleting $event): void

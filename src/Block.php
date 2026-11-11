@@ -4,10 +4,10 @@ namespace ErnestDefoe\Stances;
 
 use Carbon\Carbon;
 use Flarum\Database\AbstractModel;
+use Flarum\Database\ScopeVisibilityTrait;
 use Flarum\Discussion\Discussion;
 use Flarum\Post\Post;
 use Flarum\User\User;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
@@ -40,6 +40,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 class Block extends AbstractModel
 {
+    // Visibility is registered with Flarum (Scope\BlockVisibility), so every path that asks
+    // (our endpoints, the notifications list, other extensions) gets the same answer.
+    use ScopeVisibilityTrait;
+
     public const AGREE = 'agree';
     public const YESNO = 'yesno';
     public const PICK = 'pick';
@@ -124,18 +128,5 @@ class Block extends AbstractModel
         }
 
         return $this->type === self::RATING ? (string) $choice : ($this->labels[$choice] ?? null);
-    }
-
-    /**
-     * Blocks in posts the actor can see (core's post visibility covers the discussion, tags,
-     * private and hidden posts), still showing in their post.
-     *
-     * @param Builder<Block> $query
-     */
-    public function scopeVisibleTo(Builder $query, User $actor): void
-    {
-        $query->whereNull('stance_blocks.hidden_at')
-            ->whereNotNull('stance_blocks.post_id')
-            ->whereIn('stance_blocks.post_id', Post::whereVisibleTo($actor)->select('posts.id'));
     }
 }

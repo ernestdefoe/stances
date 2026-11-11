@@ -69,11 +69,15 @@ return [
         ->post('/stances/{id:\d+}/vote', 'stances.vote', Api\VoteController::class)
         ->delete('/stances/{id:\d+}/vote', 'stances.unvote', Api\VoteController::class)
         ->get('/stances/{id:\d+}/voters', 'stances.voters', Api\VotersController::class)
+        ->get('/stances/{id:\d+}/sides', 'stances.sides', Api\SidesController::class)
         ->post('/stances/{id:\d+}/reset', 'stances.reset', Api\ModerateController::class)
         ->post('/stances/{id:\d+}/feature', 'stances.feature', Api\ModerateController::class)
         ->post('/stances/{id:\d+}/badge', 'stances.badge', Api\ModerateController::class),
 
     new Extend\ApiResource(Api\StanceResource::class),
+
+    (new Extend\ModelVisibility(Block::class))
+        ->scope(\ErnestDefoe\Stances\Scope\BlockVisibility::class),
 
     // A post's blocks and its author's badge, batched for the whole response (Api\PostBatch).
     (new Extend\ApiResource(PostResource::class))
@@ -102,14 +106,8 @@ return [
             Schema\Integer::make('stancesNeedVote')
                 ->visible(fn ($forum, Context $context) => ! $context->getActor()->isGuest()
                     && (bool) resolve(SettingsRepositoryInterface::class)->get('ernestdefoe-stances.nav', true))
-                ->get(fn ($forum, Context $context) => Block::query()->visibleTo($context->getActor())
-                    ->whereNull('stance_blocks.closed_at')
-                    ->where(fn ($q) => $q->whereNull('stance_blocks.closes_at')->orWhere('stance_blocks.closes_at', '>', \Carbon\Carbon::now()))
-                    ->where('stance_blocks.created_at', '>', \Carbon\Carbon::now()->subDays(60))
-                    ->whereNotExists(fn ($q) => $q->selectRaw('1')->from('stance_votes')
-                        ->whereColumn('stance_votes.block_id', 'stance_blocks.id')
-                        ->where('stance_votes.user_id', $context->getActor()->id))
-                    ->count()),
+                // The same query as the Needs tab (NeedsVote), so the count is always one you can clear.
+                ->get(fn ($forum, Context $context) => resolve(\ErnestDefoe\Stances\NeedsVote::class)->count($context->getActor())),
         ]),
 
     (new Extend\Notification())
@@ -146,6 +144,8 @@ return [
         ->listen(PostDeleting::class, [Listener\Cleanup::class, 'post'])
         ->listen(DiscussionDeleting::class, [Listener\Cleanup::class, 'discussion'])
         ->listen(UserDeleting::class, [Listener\Cleanup::class, 'user'])
+        // fof/merge-discussions moves posts with plain updates: blocks follow their posts.
+        ->listen('FoF\\MergeDiscussions\\Events\\DiscussionWasMerged', [Listener\FollowPosts::class, 'handle'])
         ->listen(\ErnestDefoe\Stances\Event\Voted::class, \ErnestDefoe\Stances\Badges\EvaluateStancesBadges::class)
         ->listen(\ErnestDefoe\Stances\Event\BlocksPosted::class, \ErnestDefoe\Stances\Badges\EvaluateStancesBadges::class),
 

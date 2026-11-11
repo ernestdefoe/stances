@@ -42,14 +42,16 @@ class ImageController extends Handler
             throw new Refusal('stances_bad_image');
         }
 
-        // 30 pictures an hour per member is plenty for a dialog that takes two.
+        // 30 pictures an hour per member is plenty for a dialog that takes two. A fixed window:
+        // add() never refreshes the expiry, and increment() is atomic.
         $key = 'stances-uploads-'.$actor->id;
-        $count = (int) $this->cache->get($key, 0);
-        if ($count >= self::PER_HOUR) {
+        $this->cache->add($key, 0, 3600);
+        if ((int) $this->cache->increment($key) > self::PER_HOUR) {
             throw new Refusal('stances_too_many_uploads', 429);
         }
         $path = $this->images->store($file);
-        $this->cache->put($key, $count + 1, 3600);
+        // Only the member who uploaded a picture can put it on a block.
+        $this->cache->put(Images::ownerKey($path), $actor->id, 86400);
 
         return new JsonResponse(['data' => ['path' => $path, 'url' => $this->files->disk('flarum-assets')->url($path)]], 201);
     }

@@ -31,7 +31,7 @@ class StanceResource extends AbstractDatabaseResource
     public function scope(Builder $query, BaseContext $context): void
     {
         /** @var Builder<Block> $query */
-        $query->visibleTo(RequestUtil::getActor($context->request));
+        $query->whereVisibleTo(RequestUtil::getActor($context->request));
     }
 
     public function endpoints(): array

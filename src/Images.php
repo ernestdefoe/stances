@@ -41,7 +41,8 @@ class Images
         }
 
         try {
-            $image = $this->images->read($bytes);
+            // First frame only: decoding every frame of a long animation can exhaust memory.
+            $image = (new ImageManager($this->images->driver()::class, decodeAnimation: false))->read($bytes);
         } catch (\Throwable) {
             throw new Refusal('stances_bad_image');
         }
@@ -51,6 +52,11 @@ class Images
         $this->disk->put($path, (string) $image->toWebp(82));
 
         return $path;
+    }
+
+    public static function ownerKey(string $path): string
+    {
+        return 'stances-image-'.basename($path, '.webp');
     }
 
     /** Only our own folder: a path from anywhere else is never touched. */
