@@ -33,4 +33,19 @@ class VotesMetric implements MetricInterface
     {
         return $this->db->table('stance_votes')->where('user_id', $user->id)->count();
     }
+
+    public function isBoolean(): bool
+    {
+        return false;
+    }
+
+    public function getConfigFields(): array
+    {
+        return [];
+    }
+
+    public function getExtensionDependencies(): array
+    {
+        return ['ernestdefoe/stances'];
+    }
 }

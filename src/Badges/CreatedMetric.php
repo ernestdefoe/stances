@@ -33,4 +33,19 @@ class CreatedMetric implements MetricInterface
     {
         return $this->db->table('stance_blocks')->where('user_id', $user->id)->whereNotNull('post_id')->whereNull('hidden_at')->count();
     }
+
+    public function isBoolean(): bool
+    {
+        return false;
+    }
+
+    public function getConfigFields(): array
+    {
+        return [];
+    }
+
+    public function getExtensionDependencies(): array
+    {
+        return ['ernestdefoe/stances'];
+    }
 }
