@@ -1,6 +1,7 @@
 import app from 'flarum/forum/app';
 import DiscussionControls from 'flarum/forum/utils/DiscussionControls';
-import { choiceLabel, t, type Stance } from '../util';
+import { t, type Stance } from '../util';
+import { choiceLabel } from './api';
 
 /**
  * "Explain my vote": a reply that mentions the block's post (its author is notified and the

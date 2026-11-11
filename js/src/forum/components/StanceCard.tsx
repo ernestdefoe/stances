@@ -5,11 +5,13 @@ import Dropdown from 'flarum/common/components/Dropdown';
 import Icon from 'flarum/common/components/Icon';
 import humanTime from 'flarum/common/utils/humanTime';
 import type Mithril from 'mithril';
-import { cache, call, choiceLabel, ICONS, remember, t, type Stance } from '../util';
+import { cache, remember, t, type Stance } from '../util';
+import { call, choiceLabel, ICONS } from './api';
 import { explain } from './explain';
 import StanceModal from './StanceModal';
 import VotersModal from './VotersModal';
-import { refreshOwnSides, sideFilter, setSideFilter } from '../sides';
+import { sideFilter, setSideFilter } from '../sides';
+import { refreshOwnSides } from './ownSides';
 
 declare const m: Mithril.Static;
 
@@ -110,7 +112,7 @@ export default class StanceCard extends Component<CardAttrs> {
               disabled={!this.clickable(choice)}
               onclick={() => this.vote(choice)}
             >
-              {image ? <img className="StanceTile-image" src={image} alt="" loading="lazy" /> : null}
+              {image ? <img className="StanceTile-image" src={image} alt="" loading="lazy" decoding="async" /> : null}
               <span className="StanceTile-label">
                 <span className="StanceTile-name">
                   {selected ? <Icon name="fas fa-check" /> : null} {choiceLabel(s, choice)}
@@ -339,7 +341,7 @@ export default class StanceCard extends Component<CardAttrs> {
         : call<{ data: Stance }>('POST', `/stances/${s.id}/vote`, { choice })
       ).then((r) => {
         this.update(r.data);
-        refreshOwnSides(r.data);
+        refreshOwnSides(r.data, s);
       })
     );
   }

@@ -3,7 +3,8 @@ import FormModal, { type IFormModalAttrs } from 'flarum/common/components/FormMo
 import Button from 'flarum/common/components/Button';
 import Icon from 'flarum/common/components/Icon';
 import type Mithril from 'mithril';
-import { call, enabledTypes, ICONS, remember, t, type ResultsMode, type Stance, type StanceType } from '../util';
+import { remember, t, type ResultsMode, type Stance, type StanceType } from '../util';
+import { call, enabledTypes, ICONS } from './api';
 
 declare const m: Mithril.Static;
 

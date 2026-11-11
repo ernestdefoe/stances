@@ -8,7 +8,8 @@ import Select from 'flarum/common/components/Select';
 import humanTime from 'flarum/common/utils/humanTime';
 import type Mithril from 'mithril';
 import StanceCard from './StanceCard';
-import { cache, call, choiceLabel, enabledTypes, ICONS, remember, t, type Stance } from '../util';
+import { cache, remember, t, type Stance } from '../util';
+import { call, choiceLabel, enabledTypes, ICONS } from './api';
 
 declare const m: Mithril.Static;
 declare const flarum: any;

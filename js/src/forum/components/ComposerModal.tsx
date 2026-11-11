@@ -4,7 +4,8 @@ import Button from 'flarum/common/components/Button';
 import Icon from 'flarum/common/components/Icon';
 import LoadingIndicator from 'flarum/common/components/LoadingIndicator';
 import type Mithril from 'mithril';
-import { call, ICONS, remember, t, type Stance } from '../util';
+import { remember, t, type Stance } from '../util';
+import { call, ICONS } from './api';
 import { composerStances, insertMarker, markerIds, removeMarker } from '../composer';
 import StanceModal from './StanceModal';
 

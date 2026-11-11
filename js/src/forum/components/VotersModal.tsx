@@ -4,7 +4,8 @@ import Button from 'flarum/common/components/Button';
 import Link from 'flarum/common/components/Link';
 import LoadingIndicator from 'flarum/common/components/LoadingIndicator';
 import type Mithril from 'mithril';
-import { call, choiceLabel, t, type Stance } from '../util';
+import { t, type Stance } from '../util';
+import { call, choiceLabel } from './api';
 
 declare const m: Mithril.Static;
 
