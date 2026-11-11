@@ -7,9 +7,10 @@ use Illuminate\Database\ConnectionInterface;
 
 /**
  * Keeps each block's discussion_id the same as its post's. Merging or splitting discussions moves
- * posts with plain updates (no model events), so this runs on fof/merge-discussions' merged event
- * and every five minutes from stances:tick for anything else that moves posts. A featured or badge
- * pointer left on a discussion the block moved out of is cleared.
+ * posts with plain updates (no model events, no timestamp to follow), so this runs on
+ * fof/merge-discussions' merged event, and once an hour from stances:tick as a safety net for
+ * anything else that moves posts (fof/split, a script). A featured or badge pointer left on a
+ * discussion the block moved out of is cleared.
  */
 class FollowPosts
 {
@@ -35,15 +36,23 @@ class FollowPosts
             Block::query()->whereIn('id', $rows->pluck('id'))->update(['discussion_id' => $discussionId]);
         }
 
-        if ($moved->isNotEmpty()) {
-            $ids = $moved->pluck('id');
-            foreach (['stance_featured_id', 'stance_badge_id'] as $column) {
-                $this->db->table('discussions')->whereIn($column, $ids)
-                    ->whereNotIn('id', $moved->pluck('new_discussion')->unique()->values())
-                    ->update([$column => null]);
-            }
-        }
+        $this->clearStrayPointers();
 
         return $moved->count();
+    }
+
+    /** A featured or badge pointer whose block now lives in another discussion (a move, a swap). */
+    public function clearStrayPointers(): void
+    {
+        foreach (['stance_featured_id', 'stance_badge_id'] as $column) {
+            $stray = $this->db->table('discussions')
+                ->join('stance_blocks', 'stance_blocks.id', '=', 'discussions.'.$column)
+                ->where(fn ($q) => $q->whereNull('stance_blocks.discussion_id')
+                    ->orWhereColumn('stance_blocks.discussion_id', '!=', 'discussions.id'))
+                ->pluck('discussions.id');
+            if ($stray->isNotEmpty()) {
+                $this->db->table('discussions')->whereIn('id', $stray)->update([$column => null]);
+            }
+        }
     }
 }

@@ -12,6 +12,9 @@ declare const m: Mithril.Static;
 
 let current: number | null = null;
 let filtered: any = null;
+let allowed: Set<string> | null = null;
+
+const allIds = (discussion: any): string[] => Object.getPrototypeOf(discussion).postIds.call(discussion);
 
 export function sideFilter(): number | null {
   return current;
@@ -22,11 +25,15 @@ export function applySideFilter(discussion: any, value: number | null, ids: stri
   if (filtered && filtered !== discussion) delete filtered.postIds;
   current = value;
   if (ids) {
-    discussion.postIds = () => ids;
+    // Posts that arrive later (your own reply, someone else's) stay in: only the ones known now are filtered.
+    const known = new Set(allIds(discussion));
+    allowed = new Set(ids);
+    discussion.postIds = () => allIds(discussion).filter((id) => allowed!.has(id) || !known.has(id));
     filtered = discussion;
   } else {
     delete discussion.postIds;
     filtered = null;
+    allowed = null;
   }
   const stream: any = app.current.get('stream');
   if (stream?.discussion === discussion) stream.goToFirst();
@@ -36,5 +43,13 @@ export function applySideFilter(discussion: any, value: number | null, ids: stri
 export function clearSideFilter(): void {
   if (filtered) delete filtered.postIds;
   filtered = null;
+  allowed = null;
   current = null;
+}
+
+/** Jumping to a post the filter hides (a link, a notification, the scrubber): show everyone again first. */
+export function hidesPost(discussion: any, number: number | string): boolean {
+  if (!allowed || filtered !== discussion || number === 'reply') return false;
+  const post = app.store.all<any>('posts').find((p) => String(p.discussion?.()?.id?.()) === String(discussion.id()) && p.number() === Number(number));
+  return !post || !allowed.has(String(post.id()));
 }

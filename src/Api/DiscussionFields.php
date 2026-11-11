@@ -50,7 +50,7 @@ class DiscussionFields
                         return null;
                     }
                     $actor = $context->getActor();
-                    $block = Block::query()->whereVisibleTo($actor)->find($featuredId);
+                    $block = Block::query()->whereVisibleTo($actor)->where('stance_blocks.discussion_id', $discussion->id)->find($featuredId);
                     if (! $block) {
                         return null;
                     }

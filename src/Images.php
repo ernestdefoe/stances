@@ -16,7 +16,7 @@ use Psr\Http\Message\UploadedFileInterface;
 class Images
 {
     public const MAX_BYTES = 5 * 1024 * 1024;
-    public const MAX_PIXELS = 40_000_000;
+    public const MAX_PIXELS = 25_000_000;
     private const DIR = 'stances/';
 
     private Filesystem $disk;
@@ -37,7 +37,12 @@ class Images
         // Checked from the header before decoding: a small file can declare a huge canvas.
         $size = @getimagesizefromstring($bytes);
         if (! $size || $size[0] * $size[1] > self::MAX_PIXELS) {
-            throw new Refusal('stances_bad_image');
+            throw new Refusal('stances_image_too_big');
+        }
+        // About 5 bytes a pixel while decoding and scaling; refuse rather than hit the memory limit.
+        $limit = self::bytes((string) ini_get('memory_limit'));
+        if ($limit > 0 && memory_get_usage(true) + $size[0] * $size[1] * 5 > $limit) {
+            throw new Refusal('stances_image_too_big');
         }
 
         try {
@@ -52,6 +57,22 @@ class Images
         $this->disk->put($path, (string) $image->toWebp(82));
 
         return $path;
+    }
+
+    private static function bytes(string $value): int
+    {
+        $value = trim($value);
+        if ($value === '' || $value === '-1') {
+            return -1;
+        }
+        $n = (int) $value;
+
+        return match (strtolower(substr($value, -1))) {
+            'g' => $n * 1024 ** 3,
+            'm' => $n * 1024 ** 2,
+            'k' => $n * 1024,
+            default => $n,
+        };
     }
 
     public static function ownerKey(string $path): string

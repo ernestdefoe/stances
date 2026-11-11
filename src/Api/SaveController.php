@@ -104,9 +104,41 @@ class SaveController extends Handler
             $this->fill($block, $body, false, $actor);
         }
 
+        $block->counts ??= array_fill(0, $block->maxChoice() - $block->minChoice() + 1, 0);
         $block->save();
 
         return new JsonResponse(['data' => $this->presenter->one($block, $actor)]);
+    }
+
+    /**
+     * The dialog sends the close date back with every edit. An unchanged one is kept as it is (it
+     * may be in the past by now), and a closed block keeps its date: reopening is its own action.
+     * Only a new date is checked; a new date means voters hear about that close too.
+     */
+    private function closesAt(Block $block, mixed $value, bool $new): ?Carbon
+    {
+        if (! $new) {
+            if ($block->isClosed()) {
+                return $block->closes_at;
+            }
+            try {
+                $given = is_string($value) && $value !== '' ? Carbon::parse($value)->utc() : null;
+            } catch (\Throwable) {
+                $given = null;
+            }
+            $same = ($given === null && $block->closes_at === null)
+                || ($given && $block->closes_at && abs($given->getTimestamp() - $block->closes_at->getTimestamp()) < 60);
+            if ($same) {
+                return $block->closes_at;
+            }
+        }
+
+        $closesAt = Input::closesAt($value);
+        if ($closesAt) {
+            $block->closed_notified_at = null;
+        }
+
+        return $closesAt;
     }
 
     /** @param array<string, mixed> $body */
@@ -116,6 +148,9 @@ class SaveController extends Handler
             ? Input::type($body['type'] ?? $block->type, $this->settings->types())
             : $block->type;
 
+        if ($block->type !== $type && $block->vote_count === 0) {
+            $block->counts = null;
+        }
         $block->type = $type;
         $block->question = Input::question($body['question'] ?? null);
         $block->labels = Input::labels($type, $body['labels'] ?? null);
@@ -128,12 +163,7 @@ class SaveController extends Handler
         }
         $block->badges = $block->isSided() && ! $block->anonymous
             && Input::bool($body['badges'] ?? null, $new ? $this->settings->flag(Settings::BADGES) : $block->badges);
-        $closesAt = Input::closesAt($body['closesAt'] ?? null);
-        if ($closesAt && ($block->closes_at === null || ! $closesAt->equalTo($block->closes_at))) {
-            // A new close date: voters hear about this close too.
-            $block->closed_notified_at = null;
-        }
-        $block->closes_at = $closesAt;
+        $block->closes_at = $this->closesAt($block, $body['closesAt'] ?? null, $new);
 
         $old = $block->images ?? [];
         $images = null;

@@ -7,10 +7,12 @@ use ErnestDefoe\Stances\Block;
 use ErnestDefoe\Stances\Listener\FollowPosts;
 use ErnestDefoe\Stances\Notification\ClosedBlueprint;
 use ErnestDefoe\Stances\Settings;
+use Flarum\Discussion\Discussion;
 use Flarum\Notification\NotificationSyncer;
 use Flarum\User\Guest;
 use Flarum\User\User;
 use Illuminate\Console\Command;
+use Illuminate\Contracts\Cache\Repository;
 
 /**
  * Every five minutes: blocks that closed (by date or by hand) since the last run. With the admin's
@@ -24,10 +26,13 @@ class TickCommand extends Command
 
     protected $description = 'Mark closed Stances blocks and, if switched on, tell their voters.';
 
-    public function handle(Settings $settings, NotificationSyncer $notifications, FollowPosts $follow): int
+    public function handle(Settings $settings, NotificationSyncer $notifications, FollowPosts $follow, Repository $cache): int
     {
-        // Posts moved by something other than fof/merge-discussions (fof/split, a script): blocks follow.
-        $follow->resync();
+        // Posts moved by something other than fof/merge-discussions (fof/split, a script): blocks
+        // follow. A full pass, so once an hour; the merged event is the main path.
+        if ($cache->add('stances-follow-posts', 1, 3600)) {
+            $follow->resync();
+        }
 
         $now = Carbon::now();
         $alert = $settings->flag(Settings::CLOSED_ALERT, false);
@@ -68,6 +73,16 @@ class TickCommand extends Command
             return $voters->all();
         }
 
-        return $voters->filter(fn (User $u) => Block::query()->whereVisibleTo($u)->whereKey($block->id)->exists())->values()->all();
+        // Visibility follows group permissions, so one check per set of groups is enough, except in a
+        // private discussion, where it's per member (and there are few).
+        $private = (bool) Discussion::query()->whereKey($block->discussion_id)->value('is_private');
+        $voters->load('groups');
+        $seen = [];
+
+        return $voters->filter(function (User $u) use ($block, $private, &$seen) {
+            $key = $private ? 'u'.$u->id : $u->groups->pluck('id')->sort()->implode(',');
+
+            return $seen[$key] ??= Block::query()->whereVisibleTo($u)->whereKey($block->id)->exists();
+        })->values()->all();
     }
 }

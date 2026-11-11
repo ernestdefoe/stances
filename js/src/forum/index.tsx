@@ -1,5 +1,5 @@
 import app from 'flarum/forum/app';
-import { extend } from 'flarum/common/extend';
+import { extend, override } from 'flarum/common/extend';
 import type ItemList from 'flarum/common/utils/ItemList';
 import LinkButton from 'flarum/common/components/LinkButton';
 import Button from 'flarum/common/components/Button';
@@ -10,7 +10,7 @@ import CommentPost from 'flarum/forum/components/CommentPost';
 import type Mithril from 'mithril';
 import { remember, t, type Side, type Stance } from './util';
 import { markerIds } from './composer';
-import { clearSideFilter } from './sides';
+import { clearSideFilter, hidesPost } from './sides';
 import { featuredCopy } from './featured';
 
 export { default as extend } from './extend';
@@ -179,6 +179,13 @@ app.initializers.add('ernestdefoe/stances', () => {
   // The filter belongs to one discussion: leaving it clears the filter.
   extend('flarum/forum/components/DiscussionPage', 'onremove', function () {
     clearSideFilter();
+  });
+  override('flarum/forum/states/PostStreamState', 'goToNumber', function (this: any, original: any, number: any, noAnimation?: boolean) {
+    if (hidesPost(this.discussion, number)) {
+      clearSideFilter();
+      m.redraw();
+    }
+    return original(number, noAnimation);
   });
 
   // In the composer header, after the title (phones lift the first item into the top bar).

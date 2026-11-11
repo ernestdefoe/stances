@@ -3,6 +3,7 @@
 namespace ErnestDefoe\Stances\Api;
 
 use ErnestDefoe\Stances\Presenter;
+use ErnestDefoe\Stances\Refusal;
 use ErnestDefoe\Stances\Sides;
 use Flarum\Discussion\Discussion;
 use Flarum\Http\RequestUtil;
@@ -40,7 +41,10 @@ class SidesController extends Handler
             self::deny();
         }
 
-        $choice = (int) Arr::get($request->getQueryParams(), 'choice');
+        $choice = Input::choice(Arr::get($request->getQueryParams(), 'choice'));
+        if ($choice === null || $choice < $block->minChoice() || $choice > $block->maxChoice()) {
+            throw new Refusal('stances_bad_side');
+        }
 
         $ids = Post::whereVisibleTo($actor)
             ->where('posts.discussion_id', $discussion->id)

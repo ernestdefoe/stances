@@ -363,4 +363,107 @@ class ReviewFindingsTest extends TestCase
         $this->vote($hidden['id'], 1, 4);
         $this->assertSame(200, $this->call('GET', "/api/stances/{$hidden['id']}/sides?choice=0", 4)[0]);
     }
+
+    #[Test]
+    public function editing_a_block_keeps_its_past_close_date_and_its_closed_state()
+    {
+        $block = $this->draft(['closesAt' => Carbon::now()->addHour()->toIso8601String()]);
+        $this->discussion("[stance={$block['id']}]");
+        Block::query()->whereKey($block['id'])->update(['closes_at' => Carbon::now()->subMinute()]);
+        $old = Block::query()->find($block['id'])->closes_at->toIso8601String();
+
+        // A moderator edits the wording, the dialog sending the old (past) date back, or none.
+        foreach ([$old, null] as $sent) {
+            [$status, $json] = $this->call('PATCH', "/api/stances/{$block['id']}", 5, ['question' => 'Reworded: week 10?', 'labels' => ['Agree', 'Disagree'], 'closesAt' => $sent]);
+            $this->assertSame(200, $status, json_encode($json));
+            $this->assertTrue($json['data']['closed'], 'still closed');
+        }
+    }
+
+    #[Test]
+    public function changing_a_drafts_type_resets_its_counts()
+    {
+        $block = $this->draft();
+        [, $json] = $this->call('PATCH', "/api/stances/{$block['id']}", 2, ['type' => 'rating', 'question' => 'Rate the charts']);
+        $this->assertSame([0, 0, 0, 0, 0], Block::query()->find($block['id'])->counts);
+        $this->assertSame('rating', $json['data']['type']);
+    }
+
+    #[Test]
+    public function a_featured_pointer_never_shows_a_block_from_another_discussion()
+    {
+        $a = $this->draft([], 1);
+        [$from] = $this->discussion('First.', 3);
+        [$to] = $this->discussion('Second.', 4);
+        [, $reply] = $this->call('POST', '/api/posts', 1, ['data' => ['type' => 'posts', 'attributes' => ['content' => "[stance={$a['id']}]"], 'relationships' => ['discussion' => ['data' => ['type' => 'discussions', 'id' => (string) $from]]]]]);
+        $this->call('POST', "/api/stances/{$a['id']}/feature", 3, ['on' => true]);
+
+        // The post moves to the other discussion (a split or a swap).
+        $this->db()->table('posts')->where('id', (int) $reply['data']['id'])->update(['discussion_id' => $to, 'number' => 50]);
+        $this->app()->getContainer()->make(FollowPosts::class)->resync();
+
+        $this->assertNull($this->db()->table('discussions')->where('id', $from)->value('stance_featured_id'));
+        [, $json] = $this->call('GET', "/api/discussions/{$from}", 3);
+        $this->assertNull($json['data']['attributes']['stanceFeatured']);
+    }
+
+    #[Test]
+    public function show_replies_from_is_refused_where_sides_are_not_public()
+    {
+        // The badge block is the first sided, public block in the opening post: created first.
+        $badge = $this->draft(['results' => 'always'], 1);
+        $anon = $this->draft(['anonymous' => true, 'results' => 'always'], 1);
+        $second = $this->draft(['type' => 'yesno', 'question' => 'Second?', 'labels' => ['Yes', 'No'], 'results' => 'always'], 1);
+        [, $post] = $this->discussion("[stance={$badge['id']}]\n\n[stance={$anon['id']}]\n\n[stance={$second['id']}]", 1);
+
+        $this->assertSame(200, $this->call('GET', "/api/stances/{$badge['id']}/sides?choice=1", 3)[0]);
+        $this->assertSame(403, $this->call('GET', "/api/stances/{$anon['id']}/sides?choice=0", 3)[0], 'anonymous');
+        $this->assertSame(403, $this->call('GET', "/api/stances/{$second['id']}/sides?choice=0", 3)[0], 'not the badge block');
+        [$status, $json] = $this->call('GET', "/api/stances/{$badge['id']}/sides?choice=7", 3);
+        $this->assertSame('stances_bad_side', $json['errors'][0]['code']);
+
+        $this->db()->table('posts')->where('id', $post)->update(['hidden_at' => Carbon::now()]);
+        $this->assertSame(404, $this->call('GET', "/api/stances/{$badge['id']}/sides?choice=0", 3)[0], 'hidden post');
+        unset($status);
+    }
+
+    #[Test]
+    public function the_closed_alert_checks_each_voter_in_a_restricted_tag()
+    {
+        $this->extension('flarum-tags');
+        $this->setting('flarum-tags.min_primary_tags', '1');
+        $this->setting('flarum-tags.max_primary_tags', '1');
+        $this->setting('flarum-tags.min_secondary_tags', '0');
+        $this->setting('flarum-tags.max_secondary_tags', '0');
+        $this->setting('ernestdefoe-stances.closed_alert', '1');
+        $this->prepareDatabase([
+            'tags' => [['id' => 1, 'name' => 'Open', 'slug' => 'open', 'position' => 0, 'is_restricted' => false], ['id' => 2, 'name' => 'Staff', 'slug' => 'staff', 'position' => 1, 'is_restricted' => true]],
+            'group_permission' => [['permission' => 'tag2.viewForum', 'group_id' => Group::MODERATOR_ID]],
+        ]);
+
+        $block = $this->draft([], 1);
+        [$d] = $this->discussion("[stance={$block['id']}]", 1, ['tags' => ['data' => [['type' => 'tags', 'id' => '1']]]]);
+        $this->assertSame(200, $this->vote($block['id'], 0, 3)[0]);
+        $this->assertSame(200, $this->vote($block['id'], 1, 5)[0]);
+
+        // The discussion moves to a staff-only tag: the member can't see the block any more, the moderator can.
+        $this->db()->table('discussion_tag')->where('discussion_id', $d)->update(['tag_id' => 2]);
+        Block::query()->whereKey($block['id'])->update(['closed_at' => Carbon::now()]);
+        $this->tick();
+
+        $this->assertSame([5], $this->db()->table('notifications')->where('type', 'stanceClosed')->pluck('user_id')->map(fn ($id) => (int) $id)->all());
+        unset($d);
+    }
+
+    #[Test]
+    public function a_picture_too_large_to_decode_is_refused_with_a_clear_message()
+    {
+        $im = imagecreate(6000, 6000);
+        imagecolorallocate($im, 255, 255, 255);
+        ob_start();
+        imagepng($im);
+        [$status, $json] = $this->upload((string) ob_get_clean(), 'image/png', 3);
+        $this->assertSame(422, $status);
+        $this->assertSame('stances_image_too_big', $json['errors'][0]['code']);
+    }
 }

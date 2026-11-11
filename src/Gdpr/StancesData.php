@@ -61,7 +61,7 @@ class StancesData extends Type
         Block::query()->getConnection()->table('stance_vote_log')->where('user_id', $this->user->id)->delete();
         $votes = resolve(Votes::class);
         foreach (Block::query()->whereIn('id', $blockIds)->get() as $block) {
-            $votes->recount($block);
+            $votes->recountLocked($block);
         }
         Block::query()->whereNull('post_id')->where('user_id', $this->user->id)->delete();
         Block::query()->where('user_id', $this->user->id)->update(['user_id' => null]);

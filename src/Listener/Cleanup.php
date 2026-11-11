@@ -40,7 +40,7 @@ class Cleanup
         $blockIds = Vote::query()->where('user_id', $event->user->id)->pluck('block_id');
         $event->user->afterDelete(function () use ($blockIds) {
             foreach (Block::query()->whereIn('id', $blockIds)->get() as $block) {
-                $this->votes->recount($block);
+                $this->votes->recountLocked($block);
             }
         });
     }

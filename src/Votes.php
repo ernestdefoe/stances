@@ -117,6 +117,12 @@ class Votes
         });
     }
 
+    /** A recount from outside a vote (a member deleted or erased): under the row lock, like a vote. */
+    public function recountLocked(Block $block): void
+    {
+        $this->db->transaction(fn () => $this->recount($this->lock($block)));
+    }
+
     public function recount(Block $block): void
     {
         $counts = Vote::query()->where('block_id', $block->id)
