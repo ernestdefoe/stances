@@ -55,14 +55,16 @@
             "optional-dependencies": [
                 "flarum/tags",
                 "flarum/mentions",
-                "fof/badges"
+                "fof/badges",
+                "flarum/gdpr"
             ]
         }
     },
     "require-dev": {
         "flarum/phpstan": "^2.0",
         "flarum/testing": "^2.0",
-        "flarum/tags": "^2.0"
+        "flarum/tags": "^2.0",
+        "flarum/gdpr": "^2.0"
     },
     "scripts": {
         "test": [

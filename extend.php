@@ -113,7 +113,8 @@ return [
         ]),
 
     (new Extend\Notification())
-        ->type(MilestoneBlueprint::class, ['alert']),
+        ->type(MilestoneBlueprint::class, ['alert'])
+        ->type(\ErnestDefoe\Stances\Notification\ClosedBlueprint::class, ['alert']),
 
     (new Extend\Settings())
         ->default('ernestdefoe-stances.type_agree', true)
@@ -129,13 +130,15 @@ return [
         ->default('ernestdefoe-stances.changed_tag', true)
         ->default('ernestdefoe-stances.nav', true)
         ->default('ernestdefoe-stances.list_icon', false)
+        ->default('ernestdefoe-stances.closed_alert', false)
         ->serializeToForum('stancesMaxPerPost', 'ernestdefoe-stances.max_per_post', 'intval')
         ->serializeToForum('stancesResults', 'ernestdefoe-stances.results')
         ->serializeToForum('stancesAllowChange', 'ernestdefoe-stances.allow_change', 'boolval')
         ->serializeToForum('stancesAllowRemove', 'ernestdefoe-stances.allow_remove', 'boolval')
         ->serializeToForum('stancesBadges', 'ernestdefoe-stances.badges', 'boolval')
         ->serializeToForum('stancesNav', 'ernestdefoe-stances.nav', 'boolval')
-        ->serializeToForum('stancesChangedTag', 'ernestdefoe-stances.changed_tag', 'boolval'),
+        ->serializeToForum('stancesChangedTag', 'ernestdefoe-stances.changed_tag', 'boolval')
+        ->serializeToForum('stancesClosedAlert', 'ernestdefoe-stances.closed_alert', 'boolval'),
 
     (new Extend\Event())
         ->listen(PostSaving::class, Listener\AttachBlocks::class)
@@ -154,5 +157,15 @@ return [
         ->command(PruneCommand::class)
         ->schedule(PruneCommand::class, function (ScheduledEvent $event) {
             $event->daily()->withoutOverlapping();
+        })
+        ->command(\ErnestDefoe\Stances\Console\TickCommand::class)
+        ->schedule(\ErnestDefoe\Stances\Console\TickCommand::class, function (ScheduledEvent $event) {
+            $event->everyFiveMinutes()->withoutOverlapping();
         }),
+
+    // A member's votes and the blocks they added in their data export; erased with them.
+    (new Extend\Conditional())
+        ->whenExtensionEnabled('flarum-gdpr', fn () => [
+            (new \Flarum\Gdpr\Extend\UserData())->addType(\ErnestDefoe\Stances\Gdpr\StancesData::class),
+        ]),
 ];

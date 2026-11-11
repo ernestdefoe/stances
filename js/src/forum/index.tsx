@@ -91,6 +91,15 @@ function composerPill(this: any, items: ItemList<Mithril.Children>, priority: nu
   );
 }
 
+class ClosedNotification extends MilestoneNotification {
+  icon() {
+    return 'fas fa-lock';
+  }
+  content() {
+    return t('notification.closed');
+  }
+}
+
 app.initializers.add('ernestdefoe/stances', () => {
   app.routes['stances'] = {
     path: '/stances',
@@ -98,6 +107,7 @@ app.initializers.add('ernestdefoe/stances', () => {
   };
 
   app.notificationComponents.stanceMilestone = MilestoneNotification;
+  app.notificationComponents.stanceClosed = ClosedNotification;
 
   // String form: these live in lazy chunks, and extending an imported copy patches one core never renders.
   extend('flarum/forum/components/IndexSidebar', 'navItems', function (items: ItemList<any>) {
@@ -115,6 +125,9 @@ app.initializers.add('ernestdefoe/stances', () => {
 
   extend('flarum/forum/components/NotificationGrid', 'notificationTypes', function (items: ItemList<any>) {
     items.add('stanceMilestone', { name: 'stanceMilestone', icon: 'fas fa-scale-balanced', label: t('notification.preference') });
+    if (app.forum.attribute('stancesClosedAlert')) {
+      items.add('stanceClosed', { name: 'stanceClosed', icon: 'fas fa-lock', label: t('notification.closed_preference') });
+    }
   });
 
   // Blocks into their markers. onupdate too: an edited post replaces its content.

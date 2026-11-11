@@ -75,6 +75,8 @@ ernestdefoe-stances:
       anonymous: Make anonymous
       anonymous_confirm: "Make this block anonymous? Nobody, staff included, will be able to see who voted. This can't be undone."
       reset: Reset votes
+      delete: Delete block
+      delete_confirm: "Delete this block and its votes? Its line stays in the post and shows nothing. This can't be undone."
       reset_confirm: "Delete all {count, plural, one {# vote} other {# votes}} on this block? This can't be undone."
 
     labels:
@@ -147,6 +149,8 @@ ernestdefoe-stances:
     notification:
       milestone: "Your stance block reached {count} votes"
       preference: A stance block I added reaches 10, 50, 100 or more votes
+      closed: "Voting closed: the results are final"
+      closed_preference: A stance block I voted in closes
 
     list:
       needs_vote: Has a stance block you haven't voted on
@@ -167,6 +171,11 @@ ernestdefoe-stances:
       stances_bad_image: Choose a JPEG, PNG, WebP or GIF picture of up to 5 MB.
       stances_too_many_uploads: You've uploaded a lot of pictures. Try again in an hour.
       stances_too_many_votes: That's a lot of votes in a minute. Wait a moment and try again.
+
+  lib:
+    gdpr:
+      export: "Stances: the member's votes and the stance blocks they added."
+      delete: "Stances: the member's votes and vote history are deleted and those blocks recounted. Blocks they added stay, without an author."
 
   api:
     no_permission: You can't add stance blocks in this tag.
@@ -200,6 +209,8 @@ ernestdefoe-stances:
       nav: Show Stances in the sidebar
       list_icon: Mark discussions with a block the member hasn't voted on
       list_icon_help: Adds one query to each discussion list a member loads.
+      closed_alert: Tell voters when a block closes
+      closed_alert_help: An alert (no email) to everyone who voted, when the close date passes or someone closes it. Needs Flarum's scheduler running.
     badges:
       voted: Stance blocks voted in
       created: Stance blocks added

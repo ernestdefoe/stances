@@ -31,6 +31,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $vote_count
  * @property array<int, int>|null $counts
  * @property Carbon|null $hidden_at
+ * @property Carbon|null $closed_notified_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property Post|null $post
@@ -68,6 +69,7 @@ class Block extends AbstractModel
         'closes_at' => 'datetime',
         'closed_at' => 'datetime',
         'hidden_at' => 'datetime',
+        'closed_notified_at' => 'datetime',
     ];
 
     /** @return BelongsTo<Post, $this> */

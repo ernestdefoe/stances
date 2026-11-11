@@ -189,7 +189,8 @@ export default class StanceCard extends Component<CardAttrs> {
           </Button>
         );
       }
-      if (s.postId && app.session.user) {
+      const discussion: any = app.store.getById('discussions', String(s.discussionId));
+      if (s.postId && app.session.user && discussion?.canReply?.()) {
         items.push(
           <Button className="Button Button--link StanceCard-link" onclick={() => explain(s)}>
             {t('card.explain')}
@@ -299,6 +300,19 @@ export default class StanceCard extends Component<CardAttrs> {
         action(t('menu.reset'), 'fas fa-rotate-left', () =>
           confirm(t('menu.reset_confirm', { count: s.voteCount }))
             ? call<{ data: Stance }>('POST', `/stances/${s.id}/reset`).then((r) => this.update(r.data))
+            : Promise.resolve()
+        )
+      );
+    }
+
+    if (s.canModerate) {
+      items.push(
+        action(t('menu.delete'), 'fas fa-trash-alt', () =>
+          confirm(t('menu.delete_confirm'))
+            ? call('DELETE', `/stances/${s.id}`).then(() => {
+                cache.delete(s.id);
+                m.redraw();
+              })
             : Promise.resolve()
         )
       );

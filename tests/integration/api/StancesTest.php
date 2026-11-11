@@ -417,4 +417,69 @@ class StancesTest extends TestCase
         $this->assertSame(422, $status, json_encode($json));
         $this->assertNull(Block::query()->find($staff['id'])->post_id);
     }
+
+    #[Test]
+    public function the_tick_marks_closed_blocks_and_alerts_voters_only_when_switched_on()
+    {
+        $this->setting('ernestdefoe-stances.closed_alert', '1');
+        $block = $this->draft();
+        $this->discussion("[stance={$block['id']}]");
+        $this->vote($block['id'], 0, 3);
+        $this->vote($block['id'], 1, 4);
+        Block::query()->whereKey($block['id'])->update(['closes_at' => Carbon::now()->subMinute()]);
+
+        $this->app();
+        $command = $this->app()->getContainer()->make(\ErnestDefoe\Stances\Console\TickCommand::class);
+        $command->setLaravel($this->app()->getContainer());
+        $command->run(new \Symfony\Component\Console\Input\ArrayInput([]), new \Symfony\Component\Console\Output\NullOutput());
+
+        $db = $this->app()->getContainer()->make('db');
+        $this->assertSame(2, $db->table('notifications')->where('type', 'stanceClosed')->count());
+        $this->assertNotNull(Block::query()->find($block['id'])->closed_notified_at);
+
+        // Run again: nobody hears twice.
+        $command->run(new \Symfony\Component\Console\Input\ArrayInput([]), new \Symfony\Component\Console\Output\NullOutput());
+        $this->assertSame(2, $db->table('notifications')->where('type', 'stanceClosed')->count());
+
+        // The notification list loads with this subject.
+        [$status] = $this->call('GET', '/api/notifications', 3);
+        $this->assertSame(200, $status);
+    }
+
+    #[Test]
+    public function moderators_delete_any_block_and_members_only_their_drafts()
+    {
+        $block = $this->draft();
+        [$d] = $this->discussion("[stance={$block['id']}]");
+        $this->call('POST', "/api/stances/{$block['id']}/feature", 2, ['on' => true]);
+        $this->vote($block['id'], 0, 3);
+
+        $this->assertSame(403, $this->call('DELETE', "/api/stances/{$block['id']}", 2)[0]);
+        $this->assertSame(204, $this->call('DELETE', "/api/stances/{$block['id']}", 5)[0]);
+        $this->assertSame(0, Block::query()->count());
+        $this->assertSame(0, Vote::query()->count());
+        $this->assertNull($this->app()->getContainer()->make('db')->table('discussions')->where('id', $d)->value('stance_featured_id'));
+
+        $draft = $this->draft([], 3);
+        $this->assertSame(404, $this->call('DELETE', "/api/stances/{$draft['id']}", 4)[0]);
+        $this->assertSame(204, $this->call('DELETE', "/api/stances/{$draft['id']}", 3)[0]);
+    }
+
+    #[Test]
+    public function erasing_a_member_removes_their_votes_and_recounts()
+    {
+        $this->extension('flarum-gdpr');
+        $block = $this->draft();
+        $this->discussion("[stance={$block['id']}]");
+        $this->vote($block['id'], 0, 3);
+        $this->vote($block['id'], 1, 4);
+
+        $data = $this->app()->getContainer()->make(\ErnestDefoe\Stances\Gdpr\StancesData::class, ['user' => User::query()->find(3), 'erasureRequest' => null]);
+        $export = $data->export();
+        $this->assertStringContainsString('The trade deadline', json_encode($export));
+
+        $data->delete();
+        $this->assertSame(1, Block::query()->find($block['id'])->vote_count);
+        $this->assertSame([0, 1], Block::query()->find($block['id'])->counts);
+    }
 }

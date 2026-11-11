@@ -71,6 +71,10 @@ class SaveController extends Handler
             }
             $closed = Input::bool($body['closed'], false);
             $block->closed_at = $closed ? ($block->closed_at ?? Carbon::now()) : null;
+            if (! $closed) {
+                // Reopened: it may close again, and then voters hear about it again.
+                $block->closed_notified_at = null;
+            }
             if (! $closed && $block->closes_at?->isPast()) {
                 $block->closes_at = null;
             }

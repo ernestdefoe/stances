@@ -22,6 +22,7 @@ final class Settings
     public const CHANGED_TAG = 'ernestdefoe-stances.changed_tag';
     public const NAV = 'ernestdefoe-stances.nav';
     public const LIST_ICON = 'ernestdefoe-stances.list_icon';
+    public const CLOSED_ALERT = 'ernestdefoe-stances.closed_alert';
 
     /** The featured block, else the first sided block in the opening post. */
     public const RULE_AUTO = 'auto';

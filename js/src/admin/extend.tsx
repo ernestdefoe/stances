@@ -39,6 +39,10 @@ export default [
     .setting(() => ({ setting: setting('changed_tag'), type: 'boolean', label: t('settings.changed_tag'), help: t('settings.changed_tag_help') }), 68)
     .setting(() => ({ setting: setting('nav'), type: 'boolean', label: t('settings.nav') }), 60)
     .setting(() => ({ setting: setting('list_icon'), type: 'boolean', label: t('settings.list_icon'), help: t('settings.list_icon_help') }), 59)
+    .setting(
+      () => ({ setting: setting('closed_alert'), type: 'boolean', label: t('settings.closed_alert'), help: t('settings.closed_alert_help') }),
+      58
+    )
     .permission(() => ({ permission: 'discussion.stances.vote', icon: 'fas fa-scale-balanced', label: t('permissions.vote') }), 'reply', 55)
     .permission(() => ({ permission: 'discussion.stances.viewVoters', icon: 'fas fa-users', label: t('permissions.view_voters') }), 'view', 55)
     .permission(() => ({ permission: 'discussion.stances.create', icon: 'fas fa-scale-balanced', label: t('permissions.create') }), 'start', 55)
