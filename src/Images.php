@@ -1,0 +1,65 @@
+<?php
+
+namespace ErnestDefoe\Stances;
+
+use Illuminate\Contracts\Filesystem\Factory;
+use Illuminate\Contracts\Filesystem\Filesystem;
+use Illuminate\Support\Str;
+use Intervention\Image\ImageManager;
+use Psr\Http\Message\UploadedFileInterface;
+
+/**
+ * This-or-That pictures, kept on the forum's assets disk under stances/: scaled down to 640px and
+ * re-encoded as WebP, so whatever was uploaded (a 12 MB phone photo, an image with junk appended)
+ * is never what's served. Deleted with their block.
+ */
+class Images
+{
+    public const MAX_BYTES = 5 * 1024 * 1024;
+    private const DIR = 'stances/';
+
+    private Filesystem $disk;
+
+    public function __construct(Factory $files, private readonly ImageManager $images)
+    {
+        $this->disk = $files->disk('flarum-assets');
+    }
+
+    public function store(UploadedFileInterface $file): string
+    {
+        if ($file->getError() !== UPLOAD_ERR_OK || $file->getSize() > self::MAX_BYTES
+            || ! in_array($file->getClientMediaType(), ['image/jpeg', 'image/png', 'image/webp', 'image/gif'], true)) {
+            throw new Refusal('stances_bad_image');
+        }
+
+        try {
+            $image = $this->images->read($file->getStream()->getContents());
+        } catch (\Throwable) {
+            throw new Refusal('stances_bad_image');
+        }
+
+        $image->scaleDown(640, 640);
+        $path = self::DIR.Str::lower(Str::random(20)).'.webp';
+        $this->disk->put($path, (string) $image->toWebp(82));
+
+        return $path;
+    }
+
+    /** Only our own folder: a path from anywhere else is never touched. */
+    public function owns(?string $path): bool
+    {
+        return is_string($path) && preg_match('#^stances/[a-z0-9]{20}\.webp$#', $path) === 1;
+    }
+
+    /** @param iterable<Block> $blocks */
+    public function forget(iterable $blocks): void
+    {
+        foreach ($blocks as $block) {
+            foreach ($block->images ?? [] as $path) {
+                if ($this->owns($path) && $this->disk->exists($path)) {
+                    $this->disk->delete($path);
+                }
+            }
+        }
+    }
+}
