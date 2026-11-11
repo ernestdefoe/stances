@@ -16,6 +16,7 @@ use Psr\Http\Message\UploadedFileInterface;
 class Images
 {
     public const MAX_BYTES = 5 * 1024 * 1024;
+    public const MAX_PIXELS = 40_000_000;
     private const DIR = 'stances/';
 
     private Filesystem $disk;
@@ -32,8 +33,15 @@ class Images
             throw new Refusal('stances_bad_image');
         }
 
+        $bytes = $file->getStream()->getContents();
+        // Checked from the header before decoding: a small file can declare a huge canvas.
+        $size = @getimagesizefromstring($bytes);
+        if (! $size || $size[0] * $size[1] > self::MAX_PIXELS) {
+            throw new Refusal('stances_bad_image');
+        }
+
         try {
-            $image = $this->images->read($file->getStream()->getContents());
+            $image = $this->images->read($bytes);
         } catch (\Throwable) {
             throw new Refusal('stances_bad_image');
         }

@@ -166,6 +166,7 @@ ernestdefoe-stances:
       stances_no_badges: This block can't show sides beside replies (it's a rating, anonymous, or has badges switched off).
       stances_bad_image: Choose a JPEG, PNG, WebP or GIF picture of up to 5 MB.
       stances_too_many_uploads: You've uploaded a lot of pictures. Try again in an hour.
+      stances_too_many_votes: That's a lot of votes in a minute. Wait a moment and try again.
 
   api:
     no_permission: You can't add stance blocks in this tag.

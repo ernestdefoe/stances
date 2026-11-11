@@ -247,6 +247,11 @@ class StancesTest extends TestCase
         [, $reply] = $this->reply($d, 'Week 10 is fairer.', 3);
         $replyId = (int) $reply['data']['id'];
 
+        // Results "after voting": lee sees no sides until lee votes; a moderator always does.
+        $this->assertNull($this->posts($d, 4)[$replyId]['stanceSide']);
+        $this->assertSame('Agree', $this->posts($d, 5)[$replyId]['stanceSide']['label']);
+        $this->vote($block['id'], 0, 4);
+
         $this->assertSame(['block' => $block['id'], 'choice' => 0, 'label' => 'Agree', 'was' => null], $this->posts($d, 4)[$replyId]['stanceSide']);
 
         $this->app()->getContainer()->make('db')->table('posts')->where('id', $replyId)->update(['created_at' => Carbon::now()->subMinutes(2)]);
@@ -256,6 +261,21 @@ class StancesTest extends TestCase
         // Taking the vote back takes the badge away.
         $this->vote($block['id'], null, 3);
         $this->assertNull($this->posts($d, 4)[$replyId]['stanceSide']);
+    }
+
+    #[Test]
+    public function badges_wait_for_results_on_a_block_that_shows_them_after_it_closes()
+    {
+        $block = $this->draft(['results' => 'closed']);
+        [$d, $post] = $this->discussion("[stance={$block['id']}]");
+        $this->vote($block['id'], 0, 2);
+        $this->vote($block['id'], 1, 3);
+
+        $this->assertNull($this->posts($d, 3)[$post]['stanceSide'], 'even a voter waits for the close');
+        $this->assertNull($this->posts($d, null)[$post]['stanceSide']);
+
+        $this->call('PATCH', "/api/stances/{$block['id']}", 2, ['closed' => true]);
+        $this->assertSame('Agree', $this->posts($d, null)[$post]['stanceSide']['label']);
     }
 
     #[Test]
@@ -283,6 +303,7 @@ class StancesTest extends TestCase
 
         $this->assertSame(403, $this->call('POST', "/api/stances/{$second['id']}/badge", 3, ['on' => true])[0]);
         $this->assertSame(200, $this->call('POST', "/api/stances/{$second['id']}/badge", 2, ['on' => true])[0]);
+        $this->vote($second['id'], 0, 3);
         $this->assertSame('No', $this->posts($d, 3)[$post]['stanceSide']['label']);
     }
 

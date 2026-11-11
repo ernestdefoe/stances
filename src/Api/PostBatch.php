@@ -2,10 +2,14 @@
 
 namespace ErnestDefoe\Stances\Api;
 
+use ErnestDefoe\Stances\Access;
 use ErnestDefoe\Stances\Block;
 use ErnestDefoe\Stances\Markers;
 use ErnestDefoe\Stances\Presenter;
+use ErnestDefoe\Stances\Settings;
 use ErnestDefoe\Stances\Sides;
+use ErnestDefoe\Stances\Vote;
+use Flarum\Discussion\Discussion;
 use Flarum\Http\RequestUtil;
 use Flarum\Post\Post;
 use Illuminate\Database\Eloquent\Collection;
@@ -55,7 +59,7 @@ class PostBatch
         return function () use ($post, $request) {
             $state = self::$state[$request];
             if ($state['sides'] === null) {
-                $state['sides'] = $this->loadSides($state['posts']);
+                $state['sides'] = $this->loadSides($state['posts'], $request);
                 self::$state[$request] = $state;
             }
 
@@ -102,14 +106,36 @@ class PostBatch
      * @param array<int, Post> $posts
      * @return array<int, array<string, mixed>|null>
      */
-    private function loadSides(array $posts): array
+    private function loadSides(array $posts, ServerRequestInterface $request): array
     {
         $authored = array_filter($posts, fn (Post $p) => $p->type === 'comment' && $p->user_id);
         if (! $authored) {
             return [];
         }
 
-        $badges = $this->sides->badgeBlocks(array_values(array_map(fn (Post $p) => (int) $p->discussion_id, $authored)));
+        $badges = $this->sides->badgeBlocks(array_values(array_map(fn (Post $p) => (int) $p->discussion_id, $authored)), $request);
+        if (! $badges) {
+            return [];
+        }
+
+        // 🚨 Badges are results: on a block whose results are still hidden from this viewer ("after
+        // voting" before they vote, "after it closes" while open), they'd give the results away.
+        $actor = RequestUtil::getActor($request);
+        $voted = $actor->isGuest() ? collect() : Vote::query()->where('user_id', $actor->id)
+            ->whereIn('block_id', array_map(fn (Block $b) => $b->id, array_values($badges)))->pluck('block_id')->flip();
+        $hidden = array_filter($badges, fn (Block $b) => $b->results !== Block::SHOW_ALWAYS && ! $b->isClosed()
+            && ! ($b->results === Block::SHOW_VOTED && $voted->has($b->id)));
+        if ($hidden) {
+            // Moderators see results anyway. One query for the discussions and one for their tags, never one per block.
+            $discussions = Discussion::query()->whereIn('id', array_keys($hidden))->get();
+            Access::tags($discussions);
+            $discussions = $discussions->keyBy('id');
+            foreach (array_keys($hidden) as $discussionId) {
+                if (! Access::can($actor, Settings::MODERATE, $discussions->get($discussionId))) {
+                    unset($badges[$discussionId]);
+                }
+            }
+        }
         if (! $badges) {
             return [];
         }
