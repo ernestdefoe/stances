@@ -16,8 +16,13 @@ declare const m: Mithril.Static;
  */
 class Holder extends Component<{ id: number; host: Element; context: 'post' | 'featured' }> {
   view() {
-    if (!this.attrs.host.isConnected) {
-      window.setTimeout(() => m.mount(this.attrs.host, null), 0);
+    const host = this.attrs.host;
+    if (!host.isConnected) {
+      // Only once it is gone for good: some themes lift the post body out and put it back while
+      // laying the post out, and unmounting then would leave the block empty.
+      window.setTimeout(() => {
+        if (!host.isConnected) m.mount(host, null);
+      }, 0);
       return null;
     }
     const stance = cache.get(this.attrs.id);

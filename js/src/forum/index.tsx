@@ -54,7 +54,8 @@ function scan(post: any, root: Element | null) {
   holders.forEach((holder) => {
     const id = Number(holder.dataset.stance);
     const block = blocks.find((b) => b.id === id);
-    if (!block || holder.dataset.mounted === String(id)) return;
+    // Mounted already, unless something emptied the holder since.
+    if (!block || (holder.dataset.mounted === String(id) && holder.childElementCount)) return;
     remember(block);
     holder.dataset.mounted = String(id);
     todo.push([holder, id]);

@@ -152,8 +152,10 @@ export default class StancesPage extends Page {
 
   row(row: Row) {
     const s = cache.get(row.id) ?? row;
+    // Core's route by id and slug: a stand-in model would break extensions that override
+    // app.route.discussion and read more of the model (seen on the showcase: .tags()).
     const href = row.discussion
-      ? app.route.discussion({ id: () => String(row.discussion!.id), slug: () => row.discussion!.slug } as any, row.postNumber ?? 1)
+      ? app.route('discussion.near', { id: row.discussion.id + (row.discussion.slug ? '-' + row.discussion.slug : ''), near: row.postNumber ?? 1 })
       : '#';
     const open = this.open === row.id;
 
