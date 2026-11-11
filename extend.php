@@ -78,12 +78,13 @@ return [
     // A post's blocks and its author's badge, batched for the whole response (Api\PostBatch).
     (new Extend\ApiResource(PostResource::class))
         ->fields(fn () => [
+            // Not on discussion lists: their first posts are excerpts, never shown with blocks or badges.
             Schema\Arr::make('stanceBlocks')
-                ->visible(fn (Post $post) => $post->type === 'comment')
+                ->visible(fn (Post $post, Context $context) => $post->type === 'comment' && ! $context->listing(DiscussionResource::class))
                 ->get(fn (Post $post, Context $context) => resolve(Api\PostBatch::class)->blocks($post, $context->request)),
             Schema\Arr::make('stanceSide')
                 ->nullable()
-                ->visible(fn (Post $post) => $post->type === 'comment')
+                ->visible(fn (Post $post, Context $context) => $post->type === 'comment' && ! $context->listing(DiscussionResource::class))
                 ->get(fn (Post $post, Context $context) => resolve(Api\PostBatch::class)->side($post, $context->request)),
         ]),
 

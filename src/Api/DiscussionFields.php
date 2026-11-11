@@ -60,8 +60,8 @@ class DiscussionFields
             Schema\Arr::make('stanceBadge')
                 ->visible($showing)
                 ->nullable()
-                ->get(function (Discussion $discussion) {
-                    $block = $this->sides->badgeBlocks([(int) $discussion->id])[(int) $discussion->id] ?? null;
+                ->get(function (Discussion $discussion, Context $context) {
+                    $block = $this->sides->badgeBlocks([(int) $discussion->id], $context->request)[(int) $discussion->id] ?? null;
 
                     return $block ? ['id' => $block->id, 'labels' => $block->labels, 'picked' => (int) $discussion->getAttribute('stance_badge_id') === $block->id] : null;
                 }),

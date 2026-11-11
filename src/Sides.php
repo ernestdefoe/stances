@@ -7,6 +7,8 @@ use Flarum\Discussion\Discussion;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Collection;
+use Psr\Http\Message\ServerRequestInterface;
+use WeakMap;
 
 /**
  * Which block makes a discussion's stance badges, and what each member chose in it.
@@ -18,6 +20,9 @@ use Illuminate\Support\Collection;
  */
 class Sides
 {
+    /** @var WeakMap<ServerRequestInterface, array<string, array<int, Block>>>|null */
+    private static ?WeakMap $memo = null;
+
     public function __construct(
         private readonly Settings $settings,
         private readonly ConnectionInterface $db,
@@ -25,12 +30,37 @@ class Sides
     }
 
     /**
-     * Two queries, whatever the number of discussions.
+     * Two queries, whatever the number of discussions; once per request for the same discussions
+     * (the discussion page asks for its badge block and its posts' badges).
      *
      * @param list<int> $discussionIds
      * @return array<int, Block> keyed by discussion id
      */
-    public function badgeBlocks(array $discussionIds): array
+    public function badgeBlocks(array $discussionIds, ?ServerRequestInterface $request = null): array
+    {
+        if ($request) {
+            self::$memo ??= new WeakMap();
+            $ids = array_values(array_unique($discussionIds));
+            sort($ids);
+            $key = implode(',', $ids);
+
+            $memo = self::$memo[$request] ?? [];
+            if (! array_key_exists($key, $memo)) {
+                $memo[$key] = $this->lookup($discussionIds);
+                self::$memo[$request] = $memo;
+            }
+
+            return $memo[$key];
+        }
+
+        return $this->lookup($discussionIds);
+    }
+
+    /**
+     * @param list<int> $discussionIds
+     * @return array<int, Block>
+     */
+    private function lookup(array $discussionIds): array
     {
         $rule = $this->settings->badgeRule();
         if ($rule === Settings::RULE_OFF || ! $discussionIds) {
