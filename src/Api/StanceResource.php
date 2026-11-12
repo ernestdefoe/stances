@@ -16,7 +16,6 @@ use Flarum\User\Exception\PermissionDeniedException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Tobyz\JsonApiServer\Context as BaseContext;
-use Tobyz\JsonApiServer\Pagination\OffsetPagination;
 use Tobyz\JsonApiServer\Pagination\Pagination;
 
 /**
@@ -56,12 +55,11 @@ class StanceResource extends AbstractDatabaseResource
     /** Only on the Stances page (StanceBatch). */
     private const LISTED = ['discussion', 'postNumber', 'author', 'votesToday'];
 
+    // Built on every API request that resolves resources: only what reads need. The writer
+    // (images, disk) and the cleanup are resolved when a write happens.
     public function __construct(
         private readonly StanceBatch $batch,
-        private readonly StanceWriter $writer,
         private readonly NeedsVote $needs,
-        private readonly Cleanup $cleanup,
-        private readonly Presenter $presenter,
     ) {
     }
 
@@ -93,8 +91,9 @@ class StanceResource extends AbstractDatabaseResource
     public function endpoints(): array
     {
         return [
-            Endpoint\Index::make()
-                ->paginate(self::PAGE, self::PAGE)
+            tap(Endpoint\Index::make()->paginate(self::PAGE, self::PAGE), function (Endpoint\Index $index) {
+                $index->paginationResolver = fn (BaseContext $context) => new PeekPagination($context, self::PAGE, self::PAGE);
+            })
                 ->query(fn (Builder $query, ?Pagination $pagination, Context $context, array $filters) => $this->listing($query, $pagination, $context, $filters)),
             Endpoint\Show::make(),
             Endpoint\Create::make()->authenticated(),
@@ -130,6 +129,19 @@ class StanceResource extends AbstractDatabaseResource
         }
 
         return $fields;
+    }
+
+    /** @param Builder<Block> $query */
+    public function results(object $query, BaseContext $context): iterable
+    {
+        $rows = $query->get();
+        $page = PeekPagination::for($context);
+        if (! $page) {
+            return $rows;
+        }
+        $page->more = $rows->count() > $page->limit;
+
+        return $rows->take($page->limit);
     }
 
     public function count(object $query, BaseContext $context): ?int
@@ -192,7 +204,7 @@ class StanceResource extends AbstractDatabaseResource
                     ->orderByDesc('stance_blocks.id');
         }
 
-        if ($pagination instanceof OffsetPagination) {
+        if ($pagination instanceof PeekPagination) {
             $pagination->apply($query);
         }
 
@@ -202,7 +214,7 @@ class StanceResource extends AbstractDatabaseResource
     /** @param Context $context */
     public function creating(object $model, BaseContext $context): ?object
     {
-        $this->writer->create($model, $this->attributes($context), $context->getActor());
+        resolve(StanceWriter::class)->create($model, $this->attributes($context), $context->getActor());
 
         return $model;
     }
@@ -210,7 +222,7 @@ class StanceResource extends AbstractDatabaseResource
     /** @param Context $context */
     public function updating(object $model, BaseContext $context): ?object
     {
-        $this->writer->update($model, $this->attributes($context), $context->getActor());
+        resolve(StanceWriter::class)->update($model, $this->attributes($context), $context->getActor());
 
         return $model;
     }
@@ -219,11 +231,11 @@ class StanceResource extends AbstractDatabaseResource
     public function delete(object $model, BaseContext $context): void
     {
         $actor = $context->getActor();
-        if (! Find::isOwnDraft($model, $actor) && ! $this->presenter->one($model, $actor)['canModerate']) {
+        if (! Find::isOwnDraft($model, $actor) && ! resolve(Presenter::class)->one($model, $actor)['canModerate']) {
             throw new PermissionDeniedException();
         }
 
-        $this->cleanup->delete(new Collection([$model]));
+        resolve(Cleanup::class)->delete(new Collection([$model]));
     }
 
     /**

@@ -67,16 +67,18 @@
                 "fof/badges",
                 "flarum/gdpr",
                 "flarum/lock",
-                "fof/merge-discussions"
+                "fof/merge-discussions",
+                "flarum/approval"
             ]
         }
     },
     "require-dev": {
-        "flarum/phpstan": "^2.0",
-        "flarum/testing": "^2.0",
-        "flarum/tags": "^2.0",
+        "flarum/approval": "^2.0",
         "flarum/gdpr": "^2.0",
-        "flarum/lock": "^2.0"
+        "flarum/lock": "^2.0",
+        "flarum/phpstan": "^2.0",
+        "flarum/tags": "^2.0",
+        "flarum/testing": "^2.0"
     },
     "scripts": {
         "test": [

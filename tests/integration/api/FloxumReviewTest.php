@@ -215,4 +215,164 @@ class FloxumReviewTest extends TestCase
         $this->assertNotNull($subject, json_encode($json));
         $this->assertEqualsCanonicalizing(['question', 'postId', 'discussionId'], array_keys($subject['attributes']));
     }
+
+    // The independent review of the JSON:API change (2026-11-12).
+
+    private function version(): int
+    {
+        return (int) $this->app()->getContainer()->make(\Illuminate\Contracts\Cache\Repository::class)->get('stances-needs-version', 0);
+    }
+
+    private function tags(): void
+    {
+        $this->extension('flarum-tags');
+        $this->setting('flarum-tags.min_primary_tags', '1');
+        $this->setting('flarum-tags.max_primary_tags', '1');
+        $this->setting('flarum-tags.min_secondary_tags', '0');
+        $this->setting('flarum-tags.max_secondary_tags', '0');
+        $this->prepareDatabase([
+            'tags' => [['id' => 1, 'name' => 'Open', 'slug' => 'open', 'position' => 0, 'is_restricted' => false], ['id' => 2, 'name' => 'Staff', 'slug' => 'staff', 'position' => 1, 'is_restricted' => true]],
+            'group_permission' => [
+                ['permission' => 'tag2.viewForum', 'group_id' => Group::MEMBER_ID],
+                ['permission' => 'tag2.startDiscussion', 'group_id' => Group::MEMBER_ID],
+            ],
+        ]);
+    }
+
+    #[Test]
+    public function a_draft_for_a_discussion_needs_the_create_permission_in_its_tag()
+    {
+        $this->tags();
+        // Granted before the first request: Flarum reads group permissions once per booted app.
+        $this->prepareDatabase([
+            User::class => [['id' => 5, 'username' => 'mod', 'email' => 'mod@machine.local', 'is_email_confirmed' => 1]],
+            'group_user' => [['user_id' => 5, 'group_id' => Group::MODERATOR_ID]],
+            'group_permission' => [
+                ['permission' => 'tag2.viewForum', 'group_id' => Group::MODERATOR_ID],
+                ['permission' => 'tag2.discussion.stances.create', 'group_id' => Group::MODERATOR_ID],
+            ],
+        ]);
+        $tag = fn (int $id) => ['tags' => ['data' => [['type' => 'tags', 'id' => (string) $id]]]];
+        [$status, $json] = $this->call('POST', '/api/discussions', 1, ['data' => ['type' => 'discussions', 'attributes' => ['title' => 'Open talk', 'content' => 'Hello there.'], 'relationships' => $tag(1)]]);
+        $this->assertSame(201, $status, json_encode($json));
+        $open = (int) $json['data']['id'];
+        [$status, $json] = $this->call('POST', '/api/discussions', 1, ['data' => ['type' => 'discussions', 'attributes' => ['title' => 'Staff talk', 'content' => 'Hello staff.'], 'relationships' => $tag(2)]]);
+        $this->assertSame(201, $status, json_encode($json));
+        $staff = (int) $json['data']['id'];
+
+        $body = fn ($discussionId) => ['type' => 'agree', 'question' => 'Week 10?', 'labels' => ['Agree', 'Disagree'], 'discussionId' => $discussionId];
+        $this->assertSame(201, $this->call('POST', '/api/stances', 3, $body($open))[0]);
+        // Members can see the staff tag here but have no stances permission in it.
+        $this->assertSame(403, $this->call('POST', '/api/stances', 3, $body($staff))[0]);
+        // Not a number: the schema refuses it before anything else looks.
+        [$status, $json] = $this->call('POST', '/api/stances', 3, $body('abc'));
+        $this->assertSame(422, $status);
+        $this->assertSame('/data/attributes/discussionId', $json['errors'][0]['source']['pointer']);
+        // A discussion that doesn't exist: no discussion, so no permission.
+        $this->assertSame(403, $this->call('POST', '/api/stances', 3, $body(999999))[0]);
+        // With the permission in that tag, it's allowed.
+        $this->assertSame(201, $this->call('POST', '/api/stances', 5, $body($staff))[0]);
+    }
+
+    #[Test]
+    public function only_the_author_or_a_moderator_edits_closes_or_deletes_a_posted_block()
+    {
+        $id = $this->draft();
+        $this->discussion("[stance={$id}]");
+
+        $this->assertSame(403, $this->call('PATCH', "/api/stances/{$id}", 3, ['question' => 'Hijacked?', 'labels' => ['Agree', 'Disagree']])[0]);
+        $this->assertSame(403, $this->call('PATCH', "/api/stances/{$id}", 3, ['closed' => true])[0]);
+        $this->assertSame(403, $this->call('DELETE', "/api/stances/{$id}", 3)[0]);
+        // Even the author can't delete a posted block (only a moderator can); it's still there.
+        $this->assertSame(403, $this->call('DELETE', "/api/stances/{$id}", 2)[0]);
+        [, $json] = $this->call('GET', "/api/stances/{$id}", 3);
+        $this->assertSame('The trade deadline should move to week 10.', $json['data']['question']);
+        $this->assertFalse($json['data']['closed']);
+    }
+
+    #[Test]
+    public function asking_for_hidden_results_by_sparse_fields_still_gets_none()
+    {
+        [, $json] = $this->call('POST', '/api/stances', 2, ['type' => 'agree', 'question' => 'Week 10?', 'labels' => ['Agree', 'Disagree'], 'results' => 'voted']);
+        $id = $json['data']['id'];
+        $this->discussion("[stance={$id}]");
+        $this->assertSame(200, $this->call('POST', "/api/stances/{$id}/vote", 4, ['choice' => 0])[0]);
+
+        foreach ([3 => null, 4 => [1, 0]] as $as => $counts) {
+            [$status, $json] = $this->raw('GET', "/api/stances/{$id}", $as, null, ['fields' => ['stances' => 'counts,average,resultsVisible']]);
+            $this->assertSame(200, $status);
+            $this->assertSame($counts, $json['data']['attributes']['counts'], "user {$as}");
+            $this->assertEqualsCanonicalizing(['counts', 'average', 'resultsVisible'], array_keys($json['data']['attributes']));
+        }
+    }
+
+    #[Test]
+    public function locking_retagging_approving_and_hiding_a_discussion_refresh_every_count()
+    {
+        $this->tags();
+        $this->extension('flarum-lock', 'flarum-flags', 'flarum-approval');
+        $tag = fn (int $id) => ['tags' => ['data' => [['type' => 'tags', 'id' => (string) $id]]]];
+        $id = $this->draft(1);
+        [$status, $json] = $this->call('POST', '/api/discussions', 1, ['data' => ['type' => 'discussions', 'attributes' => ['title' => 'Owners meeting', 'content' => "[stance={$id}]"], 'relationships' => $tag(1)]]);
+        $this->assertSame(201, $status, json_encode($json));
+        $d = (int) $json['data']['id'];
+        $patch = fn (array $attributes, array $relationships = []) => $this->call('PATCH', "/api/discussions/{$d}", 1, ['data' => ['type' => 'discussions', 'id' => (string) $d, 'attributes' => $attributes] + ($relationships ? ['relationships' => $relationships] : [])])[0];
+
+        $this->assertSame([1, true], $this->needCount(3));
+
+        $v = $this->version();
+        $this->assertSame(200, $patch(['isLocked' => true]));
+        $this->assertGreaterThan($v, $this->version(), 'lock');
+        $this->assertSame([0, true], $this->needCount(3));
+        $v = $this->version();
+        $this->assertSame(200, $patch(['isLocked' => false]));
+        $this->assertGreaterThan($v, $this->version(), 'unlock');
+        $this->assertSame([1, true], $this->needCount(3));
+
+        $v = $this->version();
+        $this->assertSame(200, $patch([], $tag(2)));
+        $this->assertGreaterThan($v, $this->version(), 'retag');
+        $this->assertSame([0, true], $this->needCount(3), 'no stances permissions in the staff tag');
+        $this->assertSame(200, $patch([], $tag(1)));
+        $this->assertSame([1, true], $this->needCount(3));
+
+        $v = $this->version();
+        $post = \Flarum\Post\Post::query()->where('discussion_id', $d)->firstOrFail();
+        $this->app()->getContainer()->make(\Illuminate\Contracts\Events\Dispatcher::class)
+            ->dispatch(new \Flarum\Approval\Event\PostWasApproved($post, User::query()->findOrFail(1)));
+        $this->assertGreaterThan($v, $this->version(), 'approval');
+
+        $v = $this->version();
+        $this->assertSame(200, $patch(['isHidden' => true]));
+        $this->assertGreaterThan($v, $this->version(), 'discussion hidden');
+        $this->assertSame([0, true], $this->needCount(3));
+    }
+
+    #[Test]
+    public function a_last_page_of_exactly_twenty_has_no_next_link()
+    {
+        $page = function (int $offset) {
+            [$status, $json] = $this->raw('GET', '/api/stances', 3, null, ['filter' => ['tab' => 'new'], 'page' => ['offset' => $offset]]);
+            $this->assertSame(200, $status, json_encode($json));
+
+            return [count($json['data']), isset($json['links']['next'])];
+        };
+        $post = function (int $blocks) {
+            for ($n = 0; $n < $blocks; $n += 3) {
+                $markers = [];
+                for ($i = 0; $i < min(3, $blocks - $n); $i++) {
+                    $markers[] = '[stance='.$this->draft(1).']';
+                }
+                $this->discussion(implode("\n\n", $markers), 1);
+            }
+        };
+
+        $post(20);
+        $this->assertSame([20, false], $page(0));
+
+        $post(20);
+        $this->assertSame([20, true], $page(0));
+        $this->assertSame([20, false], $page(20));
+        $this->assertSame([0, false], $page(40));
+    }
 }

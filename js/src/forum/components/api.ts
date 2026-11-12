@@ -64,7 +64,7 @@ export function destroy(id: number): Promise<void> {
 
 /** A page of blocks, and whether there's another. */
 export function list(params: Record<string, any>): Promise<{ rows: Stance[]; more: boolean }> {
-  return app.store.find<any[]>('stances', params, { errorHandler: alert } as any).then((models: any) => ({
+  return app.store.find<any[]>('stances', params, undefined, { errorHandler: alert } as any).then((models: any) => ({
     rows: models.map(plain),
     more: !!models.payload?.links?.next,
   }));

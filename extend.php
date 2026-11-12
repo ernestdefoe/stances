@@ -157,6 +157,8 @@ return [
         ->listen('Flarum\\Lock\\Event\\DiscussionWasUnlocked', [Listener\NeedsVoteChanged::class, 'handle'])
         ->listen('Flarum\\Tags\\Event\\DiscussionWasTagged', [Listener\NeedsVoteChanged::class, 'handle'])
         ->listen('Flarum\\Approval\\Event\\PostWasApproved', [Listener\NeedsVoteChanged::class, 'handle'])
+        ->listen(\Flarum\Group\Event\Deleted::class, Listener\NeedsVoteChanged::class)
+        ->listen(\Flarum\User\Event\GroupsChanged::class, [Listener\NeedsVoteChanged::class, 'groupsChanged'])
         ->listen(\ErnestDefoe\Stances\Event\Voted::class, [Listener\NeedsVoteChanged::class, 'voted'])
         ->listen(\ErnestDefoe\Stances\Event\Voted::class, \ErnestDefoe\Stances\Badges\EvaluateStancesBadges::class)
         ->listen(\ErnestDefoe\Stances\Event\BlocksPosted::class, \ErnestDefoe\Stances\Badges\EvaluateStancesBadges::class),
