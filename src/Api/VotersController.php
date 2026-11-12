@@ -25,7 +25,7 @@ class VotersController extends Handler
     {
     }
 
-    protected function respond(ServerRequestInterface $request): ResponseInterface
+    public function handle(ServerRequestInterface $request): ResponseInterface
     {
         $actor = RequestUtil::getActor($request);
         $block = Find::visible($request, $actor);

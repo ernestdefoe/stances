@@ -9,7 +9,7 @@ import humanTime from 'flarum/common/utils/humanTime';
 import type Mithril from 'mithril';
 import StanceCard from './StanceCard';
 import { cache, remember, t, type Stance } from '../util';
-import { call, choiceLabel, enabledTypes, ICONS } from './api';
+import { choiceLabel, enabledTypes, ICONS, list } from './api';
 
 declare const m: Mithril.Static;
 declare const flarum: any;
@@ -68,12 +68,13 @@ export default class StancesPage extends Page {
   load(offset: number) {
     const ticket = ++this.ticket;
     this.loading = true;
-    call<{ data: Row[]; links: { next?: number } }>('GET', '/stances', { filter: { tab: this.tab, type: this.type }, page: { offset } })
+    list({ filter: { tab: this.tab, type: this.type }, page: { offset } })
       .then((r) => {
         if (ticket !== this.ticket) return;
-        r.data.forEach((row) => remember(row));
-        this.rows = offset ? this.rows.concat(r.data) : r.data;
-        this.next = r.links?.next ?? null;
+        const rows = r.rows as Row[];
+        rows.forEach((row) => remember(row));
+        this.rows = offset ? this.rows.concat(rows) : rows;
+        this.next = r.more ? offset + rows.length : null;
       })
       .catch(() => {})
       .finally(() => {

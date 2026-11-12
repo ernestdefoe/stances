@@ -7,7 +7,6 @@ use ErnestDefoe\Stances\Refusal;
 use ErnestDefoe\Stances\Votes;
 use Flarum\Http\RequestUtil;
 use Illuminate\Contracts\Cache\Repository;
-use Laminas\Diactoros\Response\JsonResponse;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 
@@ -26,7 +25,7 @@ class VoteController extends Handler
     ) {
     }
 
-    protected function respond(ServerRequestInterface $request): ResponseInterface
+    public function handle(ServerRequestInterface $request): ResponseInterface
     {
         $actor = RequestUtil::getActor($request);
         $actor->assertRegistered();
@@ -61,6 +60,6 @@ class VoteController extends Handler
             $this->cache->increment($key);
         }
 
-        return new JsonResponse(['data' => $this->presenter->one($block, $actor)]);
+        return self::show($request, $block);
     }
 }

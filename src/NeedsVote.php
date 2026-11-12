@@ -35,13 +35,26 @@ class NeedsVote
     /** @return Builder<Block>|null null when the member can't vote anywhere */
     public function query(User $actor): ?Builder
     {
+        $query = Block::query();
+
+        return $this->apply($query, $actor) ? $query : null;
+    }
+
+    /**
+     * Narrows a block query to the member's "needs your vote" blocks.
+     *
+     * @param Builder<Block> $query
+     * @return bool false when the member can't vote anywhere (the query is left as it was)
+     */
+    public function apply(Builder $query, User $actor): bool
+    {
         $tags = $this->extensions->isEnabled('flarum-tags');
         if ($actor->isGuest() || ! ($tags ? $actor->hasPermissionLike('discussion.'.Settings::VOTE) : $actor->hasPermission('discussion.'.Settings::VOTE))) {
-            return null;
+            return false;
         }
 
         $now = Carbon::now();
-        $query = Block::query()->whereVisibleTo($actor)
+        $query->whereVisibleTo($actor)
             ->whereNull('stance_blocks.closed_at')
             ->where(fn ($q) => $q->whereNull('stance_blocks.closes_at')->orWhere('stance_blocks.closes_at', '>', $now))
             ->where('stance_blocks.created_at', '>', $now->copy()->subDays(self::DAYS))
@@ -62,7 +75,7 @@ class NeedsVote
                 ->where('discussions.is_locked', true));
         }
 
-        return $query;
+        return true;
     }
 
     public function count(User $actor): int

@@ -14,6 +14,7 @@ use PHPUnit\Framework\Attributes\Test;
 class FloxumReviewTest extends TestCase
 {
     use RetrievesAuthorizedUsers;
+    use JsonApiCalls;
 
     protected function setUp(): void
     {
@@ -34,17 +35,6 @@ class FloxumReviewTest extends TestCase
         ]);
     }
 
-    /** @return array{int, array<string, mixed>|null} */
-    private function call(string $method, string $path, ?int $as, array $body = []): array
-    {
-        $options = $as ? ['authenticatedAs' => $as] : [];
-        if ($method !== 'GET') {
-            $options['json'] = $body;
-        }
-        $response = $this->send($this->request($method, $path, $options));
-
-        return [$response->getStatusCode(), json_decode((string) $response->getBody(), true)];
-    }
 
     private function draft(int $as = 2): int
     {
@@ -126,5 +116,103 @@ class FloxumReviewTest extends TestCase
         // A real PNG the browser didn't label: taken.
         [$status, $json] = $this->upload($png, 'application/octet-stream', 3);
         $this->assertSame(201, $status, json_encode($json));
+    }
+
+    /** @return array{int, array<string, mixed>|null, string} */
+    private function raw(string $method, string $path, ?int $as, ?array $json = null, array $params = []): array
+    {
+        $options = ($as ? ['authenticatedAs' => $as] : []) + ($json !== null ? ['json' => $json] : []);
+        $response = $this->send($this->request($method, $path, $options)->withQueryParams($params));
+
+        return [$response->getStatusCode(), json_decode((string) $response->getBody(), true), $response->getHeaderLine('Content-Type')];
+    }
+
+    #[Test]
+    public function blocks_are_a_json_api_resource_with_json_api_errors()
+    {
+        $attributes = ['blockType' => 'agree', 'question' => 'Week 10?', 'labels' => ['Agree', 'Disagree']];
+
+        [$status, $json, $type] = $this->raw('POST', '/api/stances', 3, ['data' => ['type' => 'stances', 'attributes' => $attributes]]);
+        $this->assertSame(201, $status, json_encode($json));
+        $this->assertStringContainsString('application/vnd.api+json', $type);
+        $this->assertSame('stances', $json['data']['type']);
+        $this->assertIsString($json['data']['id']);
+        $this->assertTrue($json['data']['attributes']['canEdit']);
+        $this->assertSame('agree', $json['data']['attributes']['blockType']);
+        $this->assertArrayNotHasKey('type', $json['data']['attributes'], 'reserved in JSON:API');
+        $id = $json['data']['id'];
+
+        // Show, Update and the actions answer with the same document.
+        $this->assertSame('stances', $this->raw('GET', "/api/stances/{$id}", 3)[1]['data']['type']);
+        [$status, $json] = $this->raw('PATCH', "/api/stances/{$id}", 3, ['data' => ['type' => 'stances', 'id' => $id, 'attributes' => ['question' => 'Week 11?', 'labels' => ['Agree', 'Disagree']]]]);
+        $this->assertSame([200, 'Week 11?'], [$status, $json['data']['attributes']['question']]);
+
+        // Errors are JSON:API error objects carrying our codes.
+        [$status, $json] = $this->raw('PATCH', "/api/stances/{$id}", 3, ['data' => ['type' => 'stances', 'id' => $id, 'attributes' => ['anonymous' => true]]]);
+        $this->assertSame(200, $status);
+        [$status, $json, $type] = $this->raw('GET', '/api/stances/999999', 3);
+        $this->assertSame([404, '404', 'stances_not_found'], [$status, $json['errors'][0]['status'], $json['errors'][0]['code']]);
+        $this->assertStringContainsString('application/vnd.api+json', $type);
+
+        // Fields the schema doesn't have, or that are read-only, are refused; guests can't write.
+        $this->assertSame(400, $this->raw('PATCH', "/api/stances/{$id}", 3, ['data' => ['type' => 'stances', 'id' => $id, 'attributes' => ['userId' => 1]]])[0]);
+        $this->assertSame(403, $this->raw('PATCH', "/api/stances/{$id}", 3, ['data' => ['type' => 'stances', 'id' => $id, 'attributes' => ['voteCount' => 50]]])[0]);
+        // (A guest without a session meets the CSRF check first: 400; with one, the endpoint's 401.)
+        $before = \ErnestDefoe\Stances\Block::query()->count();
+        $this->assertContains($this->raw('POST', '/api/stances', null, ['data' => ['type' => 'stances', 'attributes' => $attributes]])[0], [400, 401]);
+        $this->assertContains($this->raw('DELETE', "/api/stances/{$id}", null)[0], [400, 401]);
+        $this->assertSame($before, \ErnestDefoe\Stances\Block::query()->count());
+
+        // Someone else's draft is as missing as one that doesn't exist; its author deletes it.
+        $this->assertSame(404, $this->raw('DELETE', "/api/stances/{$id}", 4)[0]);
+        $this->assertSame(204, $this->raw('DELETE', "/api/stances/{$id}", 3)[0]);
+    }
+
+    #[Test]
+    public function the_stances_page_is_the_index_endpoint_twenty_at_a_time()
+    {
+        for ($d = 0; $d < 7; $d++) {
+            $markers = [];
+            for ($i = 0; $i < 3; $i++) {
+                $markers[] = '[stance='.$this->draft(1).']';
+            }
+            $this->discussion(implode("\n\n", $markers), 1);
+        }
+
+        [$status, $json] = $this->raw('GET', '/api/stances', 3, null, ['filter' => ['tab' => 'new']]);
+        $this->assertSame(200, $status, json_encode($json));
+        $this->assertCount(20, $json['data']);
+        $this->assertArrayHasKey('next', $json['links']);
+        $firstId = $json['data'][0]['id'];
+        $first = $json['data'][0]['attributes'];
+        $this->assertSame('Owners meeting', $first['discussion']['title']);
+        $this->assertSame(0, $first['votesToday']);
+        $this->assertSame('admin', $first['author']['username']);
+        $this->assertArrayNotHasKey('total', $json['meta']['page'] ?? [], 'nothing counts a total');
+
+        [, $json] = $this->raw('GET', '/api/stances', 3, null, ['filter' => ['tab' => 'new'], 'page' => ['offset' => 20]]);
+        $this->assertCount(1, $json['data']);
+
+        // Only the page carries where a block is; Show doesn't.
+        $this->assertArrayNotHasKey('votesToday', $this->raw('GET', "/api/stances/{$firstId}", 3)[1]['data']['attributes']);
+    }
+
+    #[Test]
+    public function as_a_notifications_subject_a_block_carries_only_its_question_and_place()
+    {
+        $this->setting('ernestdefoe-stances.closed_alert', '1');
+        $id = $this->draft();
+        $this->discussion("[stance={$id}]");
+        $this->assertSame(200, $this->call('POST', "/api/stances/{$id}/vote", 3, ['choice' => 1])[0]);
+        $this->call('PATCH', "/api/stances/{$id}", 2, ['closed' => true]);
+        $command = $this->app()->getContainer()->make(\ErnestDefoe\Stances\Console\TickCommand::class);
+        $command->setLaravel($this->app()->getContainer());
+        $command->run(new \Symfony\Component\Console\Input\ArrayInput([]), new \Symfony\Component\Console\Output\NullOutput());
+
+        [$status, $json] = $this->raw('GET', '/api/notifications', 3);
+        $this->assertSame(200, $status, json_encode($json));
+        $subject = collect($json['included'] ?? [])->firstWhere('type', 'stances');
+        $this->assertNotNull($subject, json_encode($json));
+        $this->assertEqualsCanonicalizing(['question', 'postId', 'discussionId'], array_keys($subject['attributes']));
     }
 }

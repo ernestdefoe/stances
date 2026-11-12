@@ -29,7 +29,7 @@ class ImageController extends Handler
     ) {
     }
 
-    protected function respond(ServerRequestInterface $request): ResponseInterface
+    public function handle(ServerRequestInterface $request): ResponseInterface
     {
         $actor = RequestUtil::getActor($request);
         $actor->assertRegistered();

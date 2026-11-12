@@ -10,20 +10,19 @@ use ErnestDefoe\Stances\Presenter;
 use ErnestDefoe\Stances\Refusal;
 use ErnestDefoe\Stances\Settings;
 use Flarum\Discussion\Discussion;
-use Flarum\Http\RequestUtil;
+use Flarum\User\Exception\PermissionDeniedException;
 use Flarum\User\User;
 use Illuminate\Contracts\Cache\Repository;
-use Laminas\Diactoros\Response\JsonResponse;
-use Psr\Http\Message\ResponseInterface;
-use Psr\Http\Message\ServerRequestInterface;
 
 /**
- * POST  /api/stances        a draft block, from the composer's dialog; it joins the post when the
- *                           post is saved with its marker (Listener\AttachBlocks)
- * PATCH /api/stances/{id}   edit (wording only while nobody has voted, unless a moderator),
- *                           close or reopen, make anonymous (never undone once in a post)
+ * StanceResource's Create and Update rules.
+ *
+ * Create: a draft block, from the composer's dialog; it joins the post when the post is saved
+ * with its marker (Listener\AttachBlocks).
+ * Update: edit (wording only while nobody has voted, unless a moderator), close or reopen, make
+ * anonymous (never undone once in a post).
  */
-class SaveController extends Handler
+class StanceWriter
 {
     public const MAX_DRAFTS = 20;
 
@@ -35,42 +34,38 @@ class SaveController extends Handler
     ) {
     }
 
-    protected function respond(ServerRequestInterface $request): ResponseInterface
+    /** @param array<string, mixed> $body */
+    public function create(Block $block, array $body, User $actor): void
     {
-        $actor = RequestUtil::getActor($request);
-        $actor->assertRegistered();
-        $body = self::body($request);
-
-        if ($request->getMethod() === 'POST') {
-            if (! Access::canCreateAnywhere($actor)) {
-                self::deny();
+        if (! Access::canCreateAnywhere($actor)) {
+            throw new PermissionDeniedException();
+        }
+        if (isset($body['discussionId'])) {
+            $discussion = Discussion::whereVisibleTo($actor)->find((int) $body['discussionId']);
+            if (! Access::can($actor, Settings::CREATE, $discussion)) {
+                throw new PermissionDeniedException();
             }
-            if (isset($body['discussionId'])) {
-                $discussion = Discussion::whereVisibleTo($actor)->find((int) $body['discussionId']);
-                if (! Access::can($actor, Settings::CREATE, $discussion)) {
-                    self::deny();
-                }
-            }
-            if (Block::query()->whereNull('post_id')->where('user_id', $actor->id)->count() >= self::MAX_DRAFTS) {
-                throw new Refusal('stances_too_many_drafts');
-            }
-
-            $block = new Block();
-            $block->user_id = $actor->id;
-            $this->fill($block, $body, true, $actor);
-            $block->counts = array_fill(0, $block->maxChoice() - $block->minChoice() + 1, 0);
-            $block->save();
-
-            return new JsonResponse(['data' => $this->presenter->one($block, $actor)], 201);
+        }
+        if (Block::query()->whereNull('post_id')->where('user_id', $actor->id)->count() >= self::MAX_DRAFTS) {
+            throw new Refusal('stances_too_many_drafts');
         }
 
-        $block = Find::visible($request, $actor);
+        $block->user_id = $actor->id;
+        $this->fill($block, $body, true, $actor);
+        $block->counts = array_fill(0, $block->maxChoice() - $block->minChoice() + 1, 0);
+        // Set, not left to the column default: the answer is serialized from this model.
+        $block->vote_count = 0;
+    }
+
+    /** @param array<string, mixed> $body */
+    public function update(Block $block, array $body, User $actor): void
+    {
         $data = $this->presenter->one($block, $actor);
         $draft = Find::isOwnDraft($block, $actor);
 
         if (array_key_exists('closed', $body)) {
             if (! $data['canClose']) {
-                self::deny();
+                throw new PermissionDeniedException();
             }
             $closed = Input::bool($body['closed'], false);
             $block->closed_at = $closed ? ($block->closed_at ?? Carbon::now()) : null;
@@ -99,15 +94,12 @@ class SaveController extends Handler
 
         if (array_key_exists('question', $body)) {
             if (! $draft && ! $data['canEdit']) {
-                self::deny();
+                throw new PermissionDeniedException();
             }
             $this->fill($block, $body, false, $actor);
         }
 
         $block->counts ??= array_fill(0, $block->maxChoice() - $block->minChoice() + 1, 0);
-        $block->save();
-
-        return new JsonResponse(['data' => $this->presenter->one($block, $actor)]);
     }
 
     /**

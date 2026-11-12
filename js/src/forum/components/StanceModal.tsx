@@ -4,7 +4,7 @@ import Button from 'flarum/common/components/Button';
 import Icon from 'flarum/common/components/Icon';
 import type Mithril from 'mithril';
 import { remember, t, type ResultsMode, type Stance, type StanceType } from '../util';
-import { call, enabledTypes, ICONS } from './api';
+import { call, enabledTypes, ICONS, save } from './api';
 
 declare const m: Mithril.Static;
 
@@ -263,11 +263,11 @@ export default class StanceModal extends FormModal<StanceModalAttrs> {
     if (!this.attrs.stance && this.attrs.discussionId) data.discussionId = this.attrs.discussionId;
 
     const s = this.attrs.stance;
-    (s ? call<{ data: Stance }>('PATCH', `/stances/${s.id}`, data) : call<{ data: Stance }>('POST', '/stances', data))
-      .then((r) => {
-        remember(r.data);
+    save(s ? s.id : null, data)
+      .then((saved) => {
+        remember(saved);
         this.hide();
-        this.attrs.onsave(r.data);
+        this.attrs.onsave(saved);
       })
       .catch(() => {})
       .finally(() => {

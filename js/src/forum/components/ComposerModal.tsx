@@ -5,7 +5,7 @@ import Icon from 'flarum/common/components/Icon';
 import LoadingIndicator from 'flarum/common/components/LoadingIndicator';
 import type Mithril from 'mithril';
 import { remember, t, type Stance } from '../util';
-import { call, ICONS } from './api';
+import { destroy, ICONS, list } from './api';
 import { composerStances, insertMarker, markerIds, removeMarker } from '../composer';
 import StanceModal from './StanceModal';
 
@@ -29,10 +29,10 @@ export default class ComposerModal extends Modal<ComposerModalAttrs> {
     // Editing a post: fetch its blocks once, hidden ones too.
     if (attrs.post && !attrs.stancesLoaded) {
       this.loading = true;
-      call<{ data: Stance[] }>('GET', '/stances', { filter: { post: attrs.post.id() } })
+      list({ filter: { post: attrs.post.id() } })
         .then((r) => {
-          const list = composerStances(this.attrs.composer);
-          for (const s of r.data) if (!list.some((x) => x.id === s.id)) list.push(remember(s));
+          const own = composerStances(this.attrs.composer);
+          for (const s of r.rows) if (!own.some((x) => x.id === s.id)) own.push(remember(s));
           attrs.stancesLoaded = true;
         })
         .catch(() => {})
@@ -141,7 +141,7 @@ export default class ComposerModal extends Modal<ComposerModalAttrs> {
     removeMarker(composer, s.id);
     if (s.postId === null) {
       // A draft no post has claimed: nothing to keep.
-      call('DELETE', `/stances/${s.id}`).catch(() => {});
+      destroy(s.id).catch(() => {});
       const list = composerStances(composer);
       list.splice(list.indexOf(s), 1);
     }

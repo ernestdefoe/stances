@@ -14,6 +14,7 @@ use PHPUnit\Framework\Attributes\Test;
 class StancesTest extends TestCase
 {
     use RetrievesAuthorizedUsers;
+    use JsonApiCalls;
 
     protected function setUp(): void
     {
@@ -36,19 +37,6 @@ class StancesTest extends TestCase
         ]);
     }
 
-    /** @return array{int, array<string, mixed>|null} */
-    private function call(string $method, string $path, ?int $as, array $body = []): array
-    {
-        $options = $as ? ['authenticatedAs' => $as] : [];
-        if ($method !== 'GET') {
-            $options['json'] = $body;
-        }
-        [$path, $query] = array_pad(explode('?', $path, 2), 2, '');
-        parse_str($query, $params);
-        $response = $this->send($this->request($method, $path, $options)->withQueryParams($params));
-
-        return [$response->getStatusCode(), json_decode((string) $response->getBody(), true)];
-    }
 
     /** @return array<string, mixed> */
     private function draft(array $body = [], int $as = 2): array

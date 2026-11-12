@@ -59,13 +59,10 @@ return [
             $config->BBCodes->addCustom('[STANCE={UINT}]', '<div class="StanceHolder" data-stance="{UINT}"></div>');
         }),
 
+    // Index, Show, Create, Update and Delete are StanceResource's JSON:API endpoints. These are the
+    // actions with no JSON:API equivalent; the ones that change a block answer with its Show document.
     (new Extend\Routes('api'))
-        ->get('/stances', 'stances.index', Api\ListController::class)
-        ->post('/stances', 'stances.create', Api\SaveController::class)
         ->post('/stances/images', 'stances.images', Api\ImageController::class)
-        ->get('/stances/{id:\d+}', 'stances.show', Api\ListController::class)
-        ->patch('/stances/{id:\d+}', 'stances.update', Api\SaveController::class)
-        ->delete('/stances/{id:\d+}', 'stances.delete', Api\ModerateController::class)
         ->post('/stances/{id:\d+}/vote', 'stances.vote', Api\VoteController::class)
         ->delete('/stances/{id:\d+}/vote', 'stances.unvote', Api\VoteController::class)
         ->get('/stances/{id:\d+}/voters', 'stances.voters', Api\VotersController::class)
@@ -75,6 +72,9 @@ return [
         ->post('/stances/{id:\d+}/badge', 'stances.badge', Api\ModerateController::class),
 
     new Extend\ApiResource(Api\StanceResource::class),
+
+    (new Extend\ErrorHandling())
+        ->handler(\ErnestDefoe\Stances\Refusal::class, Api\RefusalHandler::class),
 
     (new Extend\ModelVisibility(Block::class))
         ->scope(\ErnestDefoe\Stances\Scope\BlockVisibility::class),

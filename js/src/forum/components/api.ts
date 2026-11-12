@@ -33,6 +33,48 @@ export function errorText(error: any): string {
   return t('errors.generic');
 }
 
+/** Shows the error, then passes it on. */
+function alert(error: any): never {
+  app.alerts.show({ type: 'error' }, errorText(error));
+  throw error;
+}
+
+/** A `stances` resource as the plain object the card reads. `type` is reserved in JSON:API, so the API says `blockType`. */
+export function plain(model: any): Stance {
+  const { blockType, ...attributes } = model.data.attributes;
+  return { ...attributes, type: blockType, id: Number(model.id()) };
+}
+
+/** The store's record for a block, made on the spot for one that came inside a post. */
+function record(id: number): any {
+  return app.store.getById('stances', String(id)) ?? app.store.pushObject({ type: 'stances', id: String(id), attributes: {} });
+}
+
+/** Create (no id) or update a block through StanceResource. */
+export function save(id: number | null, data: Record<string, any>): Promise<Stance> {
+  const { type, ...attributes } = data;
+  if (type !== undefined) attributes.blockType = type;
+  const model = id ? record(id) : app.store.createRecord('stances');
+  return model.save(attributes, { errorHandler: alert }).then(plain);
+}
+
+export function destroy(id: number): Promise<void> {
+  return record(id).delete({}, { errorHandler: alert });
+}
+
+/** A page of blocks, and whether there's another. */
+export function list(params: Record<string, any>): Promise<{ rows: Stance[]; more: boolean }> {
+  return app.store.find<any[]>('stances', params, { errorHandler: alert } as any).then((models: any) => ({
+    rows: models.map(plain),
+    more: !!models.payload?.links?.next,
+  }));
+}
+
+/** An action that answers with the block's document (vote, reset, feature, badge). */
+export function act(method: 'POST' | 'DELETE', path: string, data?: Record<string, any>): Promise<Stance> {
+  return call<any>(method, path, data).then((doc) => plain(app.store.pushPayload(doc)));
+}
+
 export function call<T>(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', path: string, data?: Record<string, any> | FormData): Promise<T> {
   const url = app.forum.attribute<string>('apiUrl') + path;
   const isForm = data instanceof FormData;
@@ -41,10 +83,7 @@ export function call<T>(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', path: strin
     url: method === 'GET' && data && !isForm ? url + '?' + query(data) : url,
     body: method === 'GET' ? undefined : data,
     serialize: isForm ? (raw: any) => raw : undefined,
-    errorHandler: (error: any) => {
-      app.alerts.show({ type: 'error' }, errorText(error));
-      throw error;
-    },
+    errorHandler: alert,
   } as any);
 }
 

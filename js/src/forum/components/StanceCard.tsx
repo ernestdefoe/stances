@@ -6,7 +6,7 @@ import Icon from 'flarum/common/components/Icon';
 import humanTime from 'flarum/common/utils/humanTime';
 import type Mithril from 'mithril';
 import { cache, remember, t, type Stance } from '../util';
-import { call, choiceLabel, ICONS } from './api';
+import { act, call, choiceLabel, destroy, ICONS, save } from './api';
 import { explain } from './explain';
 import StanceModal from './StanceModal';
 import VotersModal from './VotersModal';
@@ -263,7 +263,7 @@ export default class StanceCard extends Component<CardAttrs> {
       const featured = discussion?.attribute('stanceFeatured')?.id === s.id;
       items.push(
         action(featured ? t('menu.unfeature') : t('menu.feature'), 'fas fa-thumbtack', () =>
-          call('POST', `/stances/${s.id}/feature`, { on: !featured }).then(() => reloadDiscussion(s))
+          act('POST', `/stances/${s.id}/feature`, { on: !featured }).then(() => reloadDiscussion(s))
         )
       );
       const badge = discussion?.attribute('stanceBadge');
@@ -271,7 +271,7 @@ export default class StanceCard extends Component<CardAttrs> {
         const picked = badge?.id === s.id && badge?.picked;
         items.push(
           action(picked ? t('menu.unbadge') : t('menu.badge'), 'fas fa-user-tag', () =>
-            call('POST', `/stances/${s.id}/badge`, { on: !picked }).then(() => reloadDiscussion(s, true))
+            act('POST', `/stances/${s.id}/badge`, { on: !picked }).then(() => reloadDiscussion(s, true))
           )
         );
       }
@@ -299,7 +299,7 @@ export default class StanceCard extends Component<CardAttrs> {
       items.push(
         action(t('menu.reset'), 'fas fa-rotate-left', () =>
           confirm(t('menu.reset_confirm', { count: s.voteCount }))
-            ? call<{ data: Stance }>('POST', `/stances/${s.id}/reset`).then((r) => this.update(r.data))
+            ? act('POST', `/stances/${s.id}/reset`).then((stance) => this.update(stance))
             : Promise.resolve()
         )
       );
@@ -309,7 +309,7 @@ export default class StanceCard extends Component<CardAttrs> {
       items.push(
         action(t('menu.delete'), 'fas fa-trash-alt', () =>
           confirm(t('menu.delete_confirm'))
-            ? call('DELETE', `/stances/${s.id}`).then(() => {
+            ? destroy(s.id).then(() => {
                 cache.delete(s.id);
                 m.redraw();
               })
@@ -394,18 +394,15 @@ export default class StanceCard extends Component<CardAttrs> {
     }
     if (choice !== null && choice === s.mine) return;
     this.run(() =>
-      (choice === null
-        ? call<{ data: Stance }>('DELETE', `/stances/${s.id}/vote`)
-        : call<{ data: Stance }>('POST', `/stances/${s.id}/vote`, { choice })
-      ).then((r) => {
-        this.update(r.data);
-        refreshOwnSides(r.data, s);
+      (choice === null ? act('DELETE', `/stances/${s.id}/vote`) : act('POST', `/stances/${s.id}/vote`, { choice })).then((stance) => {
+        this.update(stance);
+        refreshOwnSides(stance, s);
       })
     );
   }
 
   patch(data: Record<string, any>) {
-    return call<{ data: Stance }>('PATCH', `/stances/${this.stance().id}`, data).then((r) => this.update(r.data));
+    return save(this.stance().id, data).then((stance) => this.update(stance));
   }
 
   update(stance: Stance) {
