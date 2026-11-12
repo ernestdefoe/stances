@@ -17,6 +17,7 @@ class Images
 {
     public const MAX_BYTES = 5 * 1024 * 1024;
     public const MAX_PIXELS = 25_000_000;
+    public const TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
     private const DIR = 'stances/';
 
     private Filesystem $disk;
@@ -28,12 +29,15 @@ class Images
 
     public function store(UploadedFileInterface $file): string
     {
-        if ($file->getError() !== UPLOAD_ERR_OK || $file->getSize() > self::MAX_BYTES
-            || ! in_array($file->getClientMediaType(), ['image/jpeg', 'image/png', 'image/webp', 'image/gif'], true)) {
+        if ($file->getError() !== UPLOAD_ERR_OK || $file->getSize() > self::MAX_BYTES) {
             throw new Refusal('stances_bad_image');
         }
 
         $bytes = $file->getStream()->getContents();
+        // The type from the bytes themselves, never the one the browser claims.
+        if (strlen($bytes) > self::MAX_BYTES || ! in_array((new \finfo(FILEINFO_MIME_TYPE))->buffer($bytes), self::TYPES, true)) {
+            throw new Refusal('stances_bad_image');
+        }
         // Checked from the header before decoding: a small file can declare a huge canvas.
         $size = @getimagesizefromstring($bytes);
         if (! $size || $size[0] * $size[1] > self::MAX_PIXELS) {

@@ -31,7 +31,16 @@
     ],
     "require": {
         "php": "^8.3",
+        "ext-fileinfo": "*",
         "flarum/core": "^2.0"
+    },
+    "suggest": {
+        "flarum/tags": "Per-tag permissions to add blocks, vote, see voters and moderate",
+        "flarum/mentions": "Explain my vote mentions the block's post",
+        "flarum/lock": "Locked discussions take no votes",
+        "fof/badges": "Badges for stance blocks voted in and added",
+        "fof/merge-discussions": "Blocks follow their posts into the merged discussion",
+        "flarum/gdpr": "Votes and blocks in a member's data export and erasure"
     },
     "autoload": {
         "psr-4": {
@@ -57,7 +66,8 @@
                 "flarum/mentions",
                 "fof/badges",
                 "flarum/gdpr",
-                "flarum/lock"
+                "flarum/lock",
+                "fof/merge-discussions"
             ]
         }
     },
