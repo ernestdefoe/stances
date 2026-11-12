@@ -76,6 +76,18 @@ class Block extends AbstractModel
         'closed_notified_at' => 'datetime',
     ];
 
+    /** Columns that decide whether a block is open and visible: changing one changes members' "needs your vote" counts. */
+    private const NEEDS_COLUMNS = ['post_id', 'discussion_id', 'closed_at', 'closes_at', 'hidden_at'];
+
+    protected static function booted(): void
+    {
+        static::saved(function (self $block) {
+            if ($block->post_id && ($block->wasRecentlyCreated || $block->wasChanged(self::NEEDS_COLUMNS))) {
+                resolve(NeedsVote::class)->changed();
+            }
+        });
+    }
+
     /** @return BelongsTo<Post, $this> */
     public function post(): BelongsTo
     {

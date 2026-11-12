@@ -107,7 +107,7 @@ class Votes
     /** Wipes every vote and the history behind the badges' "changed" tags. */
     public function reset(Block $block): Block
     {
-        return $this->db->transaction(function () use ($block) {
+        $block = $this->db->transaction(function () use ($block) {
             $locked = $this->lock($block);
             Vote::query()->where('block_id', $locked->id)->delete();
             $this->db->table('stance_vote_log')->where('block_id', $locked->id)->delete();
@@ -115,6 +115,9 @@ class Votes
 
             return $locked;
         });
+        resolve(NeedsVote::class)->changed();
+
+        return $block;
     }
 
     /** A recount from outside a vote (a member deleted or erased): under the row lock, like a vote. */

@@ -3,6 +3,7 @@
 namespace ErnestDefoe\Stances\Listener;
 
 use ErnestDefoe\Stances\Block;
+use ErnestDefoe\Stances\NeedsVote;
 use Illuminate\Database\ConnectionInterface;
 
 /**
@@ -37,6 +38,9 @@ class FollowPosts
         }
 
         $this->clearStrayPointers();
+        if ($moved->isNotEmpty()) {
+            resolve(NeedsVote::class)->changed();
+        }
 
         return $moved->count();
     }

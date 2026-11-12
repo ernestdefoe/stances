@@ -96,7 +96,7 @@ return [
         ->fields(Api\DiscussionFields::class),
 
     // The viewer's own permission (their groups are already loaded: no query), and how many open
-    // blocks they haven't voted on (members only, one query, once per page load).
+    // blocks they haven't voted on (members only; cached a minute per member, see NeedsVote).
     (new Extend\ApiResource(ForumResource::class))
         ->fields(fn () => [
             Schema\Str::make('stancesTypes')
@@ -146,6 +146,18 @@ return [
         ->listen(UserDeleting::class, [Listener\Cleanup::class, 'user'])
         // fof/merge-discussions moves posts with plain updates: blocks follow their posts.
         ->listen('FoF\\MergeDiscussions\\Events\\DiscussionWasMerged', [Listener\FollowPosts::class, 'handle'])
+        // The cached "needs your vote" counts (NeedsVote): what members can vote in changed.
+        ->listen(\Flarum\Post\Event\Hidden::class, Listener\NeedsVoteChanged::class)
+        ->listen(\Flarum\Post\Event\Restored::class, Listener\NeedsVoteChanged::class)
+        ->listen(\Flarum\Post\Event\Deleted::class, Listener\NeedsVoteChanged::class)
+        ->listen(\Flarum\Discussion\Event\Hidden::class, Listener\NeedsVoteChanged::class)
+        ->listen(\Flarum\Discussion\Event\Restored::class, Listener\NeedsVoteChanged::class)
+        ->listen(\Flarum\Discussion\Event\Deleted::class, Listener\NeedsVoteChanged::class)
+        ->listen('Flarum\\Lock\\Event\\DiscussionWasLocked', [Listener\NeedsVoteChanged::class, 'handle'])
+        ->listen('Flarum\\Lock\\Event\\DiscussionWasUnlocked', [Listener\NeedsVoteChanged::class, 'handle'])
+        ->listen('Flarum\\Tags\\Event\\DiscussionWasTagged', [Listener\NeedsVoteChanged::class, 'handle'])
+        ->listen('Flarum\\Approval\\Event\\PostWasApproved', [Listener\NeedsVoteChanged::class, 'handle'])
+        ->listen(\ErnestDefoe\Stances\Event\Voted::class, [Listener\NeedsVoteChanged::class, 'voted'])
         ->listen(\ErnestDefoe\Stances\Event\Voted::class, \ErnestDefoe\Stances\Badges\EvaluateStancesBadges::class)
         ->listen(\ErnestDefoe\Stances\Event\BlocksPosted::class, \ErnestDefoe\Stances\Badges\EvaluateStancesBadges::class),
 

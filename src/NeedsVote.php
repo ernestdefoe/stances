@@ -6,6 +6,7 @@ use Carbon\Carbon;
 use Flarum\Discussion\Discussion;
 use Flarum\Extension\ExtensionManager;
 use Flarum\User\User;
+use Illuminate\Contracts\Cache\Repository;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Query\Builder as QueryBuilder;
 
@@ -14,13 +15,21 @@ use Illuminate\Database\Query\Builder as QueryBuilder;
  * hasn't voted on. One query, used by the sidebar count, the Needs tab and the discussion-list
  * icon, so the three always agree. The per-tag vote permission is applied in SQL (Tags scopes
  * discussions for any ability), never by dropping rows after paging.
+ *
+ * The sidebar count rides on every page load, so it's cached per member for a minute. The key
+ * carries a forum-wide version that anything changing which blocks are open or visible bumps
+ * (Listener\NeedsVoteChanged); a member's own vote forgets only their key.
  */
 class NeedsVote
 {
     public const DAYS = 60;
+    public const TTL = 60;
+    private const VERSION = 'stances-needs-version';
 
-    public function __construct(private readonly ExtensionManager $extensions)
-    {
+    public function __construct(
+        private readonly ExtensionManager $extensions,
+        private readonly Repository $cache,
+    ) {
     }
 
     /** @return Builder<Block>|null null when the member can't vote anywhere */
@@ -58,6 +67,26 @@ class NeedsVote
 
     public function count(User $actor): int
     {
-        return $this->query($actor)?->count() ?? 0;
+        if ($actor->isGuest()) {
+            return 0;
+        }
+
+        return (int) $this->cache->remember($this->key($actor), self::TTL, fn () => $this->query($actor)?->count() ?? 0);
+    }
+
+    /** Which blocks are open or visible changed: every member's count is worked out again. */
+    public function changed(): void
+    {
+        $this->cache->forever(self::VERSION, (int) $this->cache->get(self::VERSION, 0) + 1);
+    }
+
+    public function forget(User $actor): void
+    {
+        $this->cache->forget($this->key($actor));
+    }
+
+    private function key(User $actor): string
+    {
+        return 'stances-needs-'.(int) $this->cache->get(self::VERSION, 0).'-'.$actor->id;
     }
 }

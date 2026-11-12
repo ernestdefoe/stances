@@ -4,6 +4,7 @@ namespace ErnestDefoe\Stances\Listener;
 
 use ErnestDefoe\Stances\Block;
 use ErnestDefoe\Stances\Images;
+use ErnestDefoe\Stances\NeedsVote;
 use ErnestDefoe\Stances\Vote;
 use ErnestDefoe\Stances\Votes;
 use Flarum\Discussion\Event\Deleting as DiscussionDeleting;
@@ -21,6 +22,7 @@ class Cleanup
     public function __construct(
         private readonly Images $images,
         private readonly Votes $votes,
+        private readonly NeedsVote $needs,
     ) {
     }
 
@@ -59,5 +61,6 @@ class Cleanup
         $db->table('discussions')->whereIn('stance_featured_id', $ids)->update(['stance_featured_id' => null]);
         $db->table('discussions')->whereIn('stance_badge_id', $ids)->update(['stance_badge_id' => null]);
         Block::query()->whereIn('id', $ids)->delete();
+        $this->needs->changed();
     }
 }
